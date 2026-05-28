@@ -1,9 +1,3 @@
 /*
- * Cloudflare Pages / Netlify-compatible headers.
- * Required for WebLLM's multi-threaded WASM (SharedArrayBuffer needs
- * cross-origin isolation). The Vite dev server gets the same headers
- * via vite.config.ts.
- */
-/*
   Cross-Origin-Opener-Policy: same-origin
   Cross-Origin-Embedder-Policy: require-corp
