@@ -1,0 +1,66 @@
+schema: spec-driven
+context: |
+  Project: pranav.dev — a terminal-styled personal portfolio with an on-device
+  LLM chat feature accessed via the `ask` command.
+
+  Design philosophy: a deliberate counter-position to frontend-heavy "3D portfolio"
+  sites. The medium is the message — a backend/DevOps engineer's portfolio should
+  feel like the shell they actually live in.
+
+  Tech stack:
+    - Build:    Vite 8 + TypeScript 6, Bun as package manager & script runner
+    - UI:       React 19, no UI framework (hand-rolled CSS-in-style). No SSR. No Next.js. Static output only.
+    - Styling:  CSS variables driven by a theme registry; JetBrains Mono + IBM Plex Mono fonts
+    - LLM:      Chrome Prompt API (Gemini Nano) as primary, @mlc-ai/web-llm + WebGPU as secondary (lazy-loaded)
+    - Deploy:   Cloudflare Pages (static); optional OpenShift+Tekton+ArgoCD path
+    - State:    React hooks only (useState/useReducer/useRef). No Redux/Zustand/etc.
+    - Lint:     ESLint flat config, strict TypeScript
+
+  Domains (each proposal SHOULD map to exactly one):
+    - terminal-shell:    Boot sequence, prompt rendering, input handling, history, hotkeys
+    - command-registry:  Command dispatch table, tab completion, "did you mean" search
+    - on-device-llm:     The `ask` command, backend detection, streaming, abort, persona
+    - theme-system:      Theme registry, theme switching, CSS variable propagation
+    - site-content:      Bio, projects, skills, contacts data
+
+  Conventions:
+    - Source lives under src/; commands under src/commands/; themes under src/themes/;
+      content (bio, projects, contacts) under src/content/; LLM logic under src/lib/.
+    - Each command is one file exporting a Command object with { name, help, run }.
+      Tab completion auto-discovers from the registry — no second list to maintain.
+    - Each theme is one file exporting a Theme object matching the Theme type.
+    - Content lives in src/content/ only. Never inline content in components.
+    - The `ask` command is opt-in: it never auto-downloads model weights.
+    - If a proposal requires a hosted LLM, it must add a user-visible
+      "this calls a remote server" disclosure.
+    - User input to the LLM is always wrapped in <user_question>...</user_question> tags
+      as basic prompt-injection hardening.
+    - No third-party trackers, no analytics by default, no API keys ever shipped to the client.
+    - Side-effectful tests (LLM, network) are skipped by default via
+      it.runIf(process.env.E2E === '1', ...).
+
+  Proposal naming: kebab-case verbs — add-, refactor-, remove-, improve-, fix-.
+
+  Audience: recruiters, hiring managers, and engineers visiting the site. The bar is
+  "this looks like production work" not "this is a hobby project."
+
+  Performance budget:
+    - LCP < 1.2s on slow 4G
+    - Total initial JS < 60KB gzipped (excluding lazily-imported WebLLM)
+    - Lighthouse 100/100 across the four categories on the static shell
+
+rules:
+  proposal:
+    - State the user-visible value first; technical detail second.
+    - Include a "Non-goals" section to keep scope tight.
+    - Note which performance budget items the change might affect.
+  specs:
+    - Use Given/When/Then for every scenario.
+    - Requirements use SHALL / SHOULD / MAY per RFC 2119.
+    - Keep requirements testable — if you can't write a Playwright test for it, rewrite it.
+  design:
+    - Document the failure modes, not just the happy path. The on-device LLM
+      cascade especially needs explicit fallback behavior in every spec.
+  tasks:
+    - One task per concrete file change or test addition.
+    - Test tasks come before implementation tasks where TDD applies (mostly for utils).

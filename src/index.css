@@ -1,0 +1,43 @@
+/* ─── Reset & global base ──────────────────────────────────────────────────
+ * Everything visual is owned by Terminal's runtime-themed <style> block.
+ * This file only handles the things that must be set before React mounts
+ * (anti-flash background, font preloading, scrollbar resets).
+ * ─────────────────────────────────────────────────────────────────────── */
+
+@import url("https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap");
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+}
+
+body {
+  /* Match the default espresso theme bg to avoid a white flash before React
+     mounts. If you change the default theme, update this too. */
+  background: #1a120b;
+  color: #e8d5b7;
+  font-family: "JetBrains Mono", "IBM Plex Mono", ui-monospace, monospace;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  overflow-x: hidden;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}

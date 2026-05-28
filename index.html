@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark light" />
+    <meta name="theme-color" content="#1a120b" />
+    <meta
+      name="description"
+      content="Pranav Bedre — software engineer at Cisco working on AI agents, backend, and developer experience. Terminal portfolio with an on-device LLM you can chat with about my work. No API keys, no server."
+    />
+    <title>pranav@dev:~$</title>
+  </head>
+  <body>
+    <div id="root">
+      <!-- Static shell: instant first paint before React hydrates. React replaces this on mount. -->
+      <style>
+        @keyframes blink{0%,49%{opacity:1}50%,100%{opacity:0}}
+        .s-window{max-width:980px;margin:24px auto;border:1px solid #5c4a3522;border-radius:8px;background:#1e150e;box-shadow:0 24px 48px #1a120b;overflow:hidden}
+        .s-titlebar{display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid #5c4a3533;background:#1a120b}
+        .s-dot{width:12px;height:12px;border-radius:50%}
+        .s-title{flex:1;text-align:center;color:#5c4a35;font-size:12px;letter-spacing:.05em;font-family:'JetBrains Mono',monospace}
+        .s-body{padding:18px 22px 60px;min-height:70vh;font-family:'JetBrains Mono',monospace;font-size:14px;color:#5c4a35}
+        .s-cursor{display:inline-block;width:8px;height:1em;background:#e8d5b7;vertical-align:text-bottom;animation:blink 1s steps(1) infinite;margin-left:2px}
+        @media(max-width:600px){.s-window{margin:8px;border-radius:6px}.s-body{padding:14px 14px 60px}}
+      </style>
+      <div class="s-window">
+        <div class="s-titlebar">
+          <div class="s-dot" style="background:#ff5f56"></div>
+          <div class="s-dot" style="background:#ffbd2e"></div>
+          <div class="s-dot" style="background:#27c93f"></div>
+          <div class="s-title">pranav@dev — zsh — espresso</div>
+        </div>
+        <div class="s-body">
+          <span style="color:#5c4a35">[ ok ] mounting /dev/curiosity</span><span class="s-cursor"></span>
+        </div>
+      </div>
+    </div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
