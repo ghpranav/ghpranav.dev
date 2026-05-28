@@ -4,6 +4,7 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 import type { WhoamiSegment, Skills, Project, Contact } from "./content/site";
+import type { Theme } from "./themes";
 
 export type TerminalLine =
   | { type: "boot"; text: string }
@@ -21,9 +22,25 @@ export type TerminalLine =
 
 export type CommandResult = TerminalLine | null;
 
+export type CommandContext = {
+  theme: Theme;
+  setTheme: (t: Theme) => void;
+  clear: () => void;
+  history: readonly string[];
+  enterChat: (opts: { flags: string[] }) => void;
+};
+
 export type Command = {
+  name: string;
+  help: string;
+  aliases?: readonly string[];
+  hidden?: boolean;
+  run: (args: string[], ctx: CommandContext) => CommandResult;
+};
+
+export type CommandTableEntry = {
   help: string;
   run: (args: string[]) => CommandResult;
 };
 
-export type CommandTable = Record<string, Command>;
+export type CommandTable = Record<string, CommandTableEntry>;
