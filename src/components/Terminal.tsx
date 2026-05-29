@@ -49,7 +49,8 @@ export default function Terminal() {
   const streamAbortRef = useRef<AbortController | null>(null);
 
   const inputRef = useRef<HTMLInputElement | null>(null);
-  const endRef = useRef<HTMLDivElement | null>(null);
+  const bodyRef = useRef<HTMLDivElement | null>(null);
+  const userScrolledUpRef = useRef(false);
 
   const appendLine = useCallback((line: TerminalLine) => {
     setLines((p) => [...p, line]);
@@ -173,7 +174,23 @@ export default function Terminal() {
   }, [booted, appendLine]);
 
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: "smooth" });
+    const el = bodyRef.current;
+    if (!el) return;
+    const onScroll = () => {
+      userScrolledUpRef.current =
+        el.scrollTop + el.clientHeight < el.scrollHeight - 50;
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, []);
+
+  useEffect(() => {
+    if (!userScrolledUpRef.current && bodyRef.current) {
+      bodyRef.current.scrollTo({
+        top: bodyRef.current.scrollHeight,
+        behavior: "smooth",
+      });
+    }
   }, [lines]);
 
   const focusInput = useCallback(() => inputRef.current?.focus(), []);
@@ -368,14 +385,13 @@ export default function Terminal() {
 
   return (
     <div
+      className="ptl-root"
       style={{
-        minHeight: "100vh",
         background: theme.bg,
         color: theme.fg,
         fontFamily: "'JetBrains Mono', 'IBM Plex Mono', ui-monospace, monospace",
         fontSize: "14px",
         lineHeight: 1.55,
-        position: "relative",
       }}
     >
       {/*
@@ -387,23 +403,27 @@ export default function Terminal() {
         @keyframes blink { 0%, 49% { opacity: 1 } 50%, 100% { opacity: 0 } }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(2px) } to { opacity: 1; transform: translateY(0) } }
         @keyframes pulse { 0%, 100% { opacity: 1 } 50% { opacity: 0.4 } }
+        .ptl-root { position: relative; height: 100vh; height: 100dvh; display: grid; place-content: center }
         .ptl-line { animation: fadeIn 0.12s ease-out }
         .ptl-cursor { display: inline-block; width: 8px; height: 1em; background: ${theme.cursor}; vertical-align: text-bottom; animation: blink 1s steps(1) infinite; margin-left: 2px }
         .ptl-link { color: ${theme.accent}; text-decoration: none; border-bottom: 1px dotted ${theme.accent} }
         .ptl-link:hover { background: ${theme.accent}22 }
         .ptl-grain { position: fixed; inset: 0; pointer-events: none; z-index: 1; opacity: ${theme.grain};
           background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>") }
-        .ptl-window { max-width: 980px; margin: 24px auto; border: 1px solid ${theme.dim}44; border-radius: 8px; background: ${theme.panel}; box-shadow: 0 24px 48px ${theme.bg}, 0 0 0 1px ${theme.dim}22 inset; overflow: hidden }
-        .ptl-titlebar { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid ${theme.dim}33; background: ${theme.bg} }
+        .ptl-window { width: min(1024px, 100vw - 48px); height: min(calc(100vh - 48px), 800px); height: min(calc(100dvh - 48px), 800px); display: flex; flex-direction: column; border: 1px solid ${theme.dim}44; border-radius: 8px; background: ${theme.panel}; box-shadow: 0 24px 48px ${theme.bg}, 0 0 0 1px ${theme.dim}22 inset; overflow: hidden }
+        .ptl-titlebar { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid ${theme.dim}33; background: ${theme.bg}; flex-shrink: 0 }
         .ptl-dot { width: 12px; height: 12px; border-radius: 50% }
         .ptl-title { flex: 1; text-align: center; color: ${theme.dim}; font-size: 12px; letter-spacing: 0.05em }
-        .ptl-body { padding: 18px 22px 60px; min-height: 70vh }
+        .ptl-body { padding: 18px 22px 60px; flex: 1; min-height: 0; overflow-y: auto; scrollbar-gutter: stable; scrollbar-color: ${theme.dim} ${theme.panel}; scrollbar-width: thin }
+        .ptl-body::-webkit-scrollbar { width: 6px }
+        .ptl-body::-webkit-scrollbar-track { background: ${theme.panel} }
+        .ptl-body::-webkit-scrollbar-thumb { background: ${theme.dim}; border-radius: 3px }
         input.ptl-input { background: transparent; border: none; outline: none; color: ${theme.fg}; font-family: inherit; font-size: inherit; flex: 1; caret-color: ${theme.cursor} }
         .ptl-prompt-row { display: flex; align-items: baseline; gap: 8px }
         .ptl-tag { display: inline-block; padding: 2px 8px; margin-right: 6px; border: 1px solid ${theme.dim}66; border-radius: 3px; font-size: 11px; color: ${theme.dim} }
         .ptl-chat-prompt { color: ${theme.accent2}; font-weight: 600 }
         .ptl-streaming-cursor { display: inline-block; width: 6px; height: 1em; background: ${theme.accent}; vertical-align: text-bottom; animation: pulse 1s ease-in-out infinite; margin-left: 1px }
-        @media (max-width: 600px) { .ptl-window { margin: 8px; border-radius: 6px } .ptl-body { padding: 14px 14px 60px } }
+        @media (max-width: 600px) { .ptl-window { width: calc(100vw - 16px); height: calc(100vh - 16px); height: calc(100dvh - 16px); border-radius: 6px } .ptl-body { padding: 14px 14px 60px } }
       `}</style>
 
       <div className="ptl-grain" />
@@ -421,7 +441,7 @@ export default function Terminal() {
           </div>
         </div>
 
-        <div className="ptl-body" onClick={focusInput}>
+        <div ref={bodyRef} className="ptl-body" onClick={focusInput}>
           {lines.map((l, i) => (
             <Line
               key={i}
@@ -455,7 +475,6 @@ export default function Terminal() {
               />
             </div>
           )}
-          <div ref={endRef} />
         </div>
       </div>
     </div>
