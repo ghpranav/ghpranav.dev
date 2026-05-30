@@ -21,7 +21,7 @@ import {
   type KeyboardEvent,
 } from "react";
 
-import { THEMES, type Theme } from "../themes";
+import { THEMES, loadTheme, saveTheme, type Theme, type ThemeName } from "../themes";
 import { ASCII_NAME } from "../content/site";
 import { buildCommands, COMMAND_REGISTRY } from "../commands";
 import { complete as completeInput } from "../lib/completion";
@@ -44,7 +44,18 @@ type CycleState = {
 import { Line } from "./Line";
 
 export default function Terminal() {
-  const [theme, setTheme] = useState<Theme>(THEMES.espresso);
+  const [theme, setThemeState] = useState<Theme>(() => loadTheme());
+
+  // Wrap the raw setter so every theme change is persisted to localStorage.
+  // The stored value is the registry KEY (e.g. "tokyo"), resolved by object
+  // identity — not the display `name` (which can differ, e.g. "tokyo-night").
+  const setTheme = useCallback((next: Theme) => {
+    setThemeState(next);
+    const key = (Object.keys(THEMES) as ThemeName[]).find(
+      (k) => THEMES[k] === next,
+    );
+    if (key) saveTheme(key);
+  }, []);
   const [lines, setLines] = useState<TerminalLine[]>([]);
   const [history, setHistory] = useState<string[]>([]);
   const [histIdx, setHistIdx] = useState(-1);
@@ -156,7 +167,7 @@ export default function Terminal() {
       history,
       enterChat,
     }),
-    [theme, history, enterChat],
+    [theme, history, enterChat, setTheme],
   );
 
   const commands = useMemo(() => buildCommands(cmdCtx), [cmdCtx]);
