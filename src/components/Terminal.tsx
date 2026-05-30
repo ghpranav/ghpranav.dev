@@ -12,6 +12,7 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 import {
+  Fragment,
   useCallback,
   useEffect,
   useMemo,
@@ -514,10 +515,28 @@ export default function Terminal() {
               {!chatMode && cycle !== null && (
                 <div
                   className="ptl-cycle-list ptl-line"
-                  style={{ color: theme.dim, marginTop: 2 }}
+                  style={{ marginTop: 2 }}
                   aria-live="polite"
                 >
-                  {cycle.candidates.join("  ")}
+                  {cycle.candidates.map((candidate, i) => (
+                    <Fragment key={i}>
+                      {i > 0 && "  "}
+                      <span
+                        style={
+                          i === cycle.index
+                            ? {
+                                background: theme.accent,
+                                color: theme.bg,
+                                padding: "0 0.25ch",
+                                borderRadius: 2,
+                              }
+                            : { color: theme.dim }
+                        }
+                      >
+                        {candidate}
+                      </span>
+                    </Fragment>
+                  ))}
                 </div>
               )}
             </>
