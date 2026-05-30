@@ -1,6 +1,6 @@
 schema: spec-driven
 context: |
-  Project: pranav.dev — a terminal-styled personal portfolio with an on-device
+  Project: ghpranav.dev — a terminal-styled personal portfolio with an on-device
   LLM chat feature accessed via the `ask` command.
 
   Design philosophy: a deliberate counter-position to frontend-heavy "3D portfolio"
@@ -21,7 +21,6 @@ context: |
     - command-registry:  Command dispatch table, tab completion, "did you mean" search
     - on-device-llm:     The `ask` command, backend detection, streaming, abort, persona
     - theme-system:      Theme registry, theme switching, CSS variable propagation
-    - site-content:      Bio, projects, skills, contacts data
 
   Conventions:
     - Source lives under src/; commands under src/commands/; themes under src/themes/;
