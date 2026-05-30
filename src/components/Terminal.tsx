@@ -22,7 +22,8 @@ import {
 
 import { THEMES, type Theme } from "../themes";
 import { ASCII_NAME } from "../content/site";
-import { buildCommands } from "../commands";
+import { buildCommands, COMMAND_REGISTRY } from "../commands";
+import { complete as completeInput } from "../lib/completion";
 import { closest } from "../lib/levenshtein";
 import {
   createChatSession,
@@ -30,7 +31,14 @@ import {
   type Backend,
   type ChatSession,
 } from "../lib/llm";
-import type { TerminalLine } from "../types";
+import type { CommandContext, TerminalLine } from "../types";
+
+type CycleState = {
+  candidates: readonly string[];
+  index: number;
+  prefix: string;
+  tokenStart: number;
+};
 
 import { Line } from "./Line";
 
@@ -51,6 +59,11 @@ export default function Terminal() {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const userScrolledUpRef = useRef(false);
+
+  // Cycle state is in `useState` (not `useRef`) because the candidate
+  // listing is rendered as an ephemeral block below the live prompt and
+  // must re-render when the cycle starts / advances / resets.
+  const [cycle, setCycle] = useState<CycleState | null>(null);
 
   const appendLine = useCallback((line: TerminalLine) => {
     setLines((p) => [...p, line]);
@@ -134,17 +147,18 @@ export default function Terminal() {
     appendLine({ type: "text", text: "→ exited chat. back to shell." });
   }, [chatSession, appendLine]);
 
-  const commands = useMemo(
-    () =>
-      buildCommands({
-        setTheme,
-        theme,
-        clear: () => setLines([]),
-        history,
-        enterChat,
-      }),
+  const cmdCtx = useMemo<CommandContext>(
+    () => ({
+      setTheme,
+      theme,
+      clear: () => setLines([]),
+      history,
+      enterChat,
+    }),
     [theme, history, enterChat],
   );
+
+  const commands = useMemo(() => buildCommands(cmdCtx), [cmdCtx]);
 
   // Boot sequence — runs once.
   useEffect(() => {
@@ -321,23 +335,45 @@ export default function Terminal() {
 
   const handleTab = useCallback(() => {
     if (chatMode) return;
-    const parts = input.split(/\s+/);
-    if (parts.length === 1) {
-      const cs = Object.keys(commands).filter((c) => c.startsWith(parts[0]));
-      if (cs.length === 1) setInput(cs[0] + " ");
-      else if (cs.length > 1) {
-        appendLine({ type: "input", text: input, prompt: "pranav@dev:~$" });
-        appendLine({ type: "text", text: cs.join("   ") });
-      }
-    } else if (parts[0] === "theme") {
-      const sub = parts[1] || "";
-      const ts = Object.keys(THEMES).filter((n) => n.startsWith(sub));
-      if (ts.length === 1) setInput(`theme ${ts[0]}`);
+
+    // Cycle path: we already started a cycle on a prior Tab and no other key
+    // has fired since. Advance through the candidates in place, in the live
+    // prompt; the ephemeral listing below it stays put.
+    if (cycle !== null) {
+      const next = (cycle.index + 1) % cycle.candidates.length;
+      setInput(cycle.prefix + cycle.candidates[next]);
+      setCycle({ ...cycle, index: next });
+      return;
     }
-  }, [chatMode, input, commands, appendLine]);
+
+    // Fresh path: ask the helper what could complete.
+    const result = completeInput(input, COMMAND_REGISTRY, cmdCtx);
+    if (result.kind === "none") return;
+    if (result.kind === "single") {
+      setInput(result.replacement);
+      return;
+    }
+    // Many — fill the live prompt with the first candidate and start a
+    // cycle. The candidate list is rendered as an ephemeral block BELOW
+    // the live prompt (not in the scrollback transcript) so the prompt
+    // stays anchored where the user was typing.
+    setInput(result.prefix + result.candidates[0]);
+    setCycle({
+      candidates: result.candidates,
+      index: 0,
+      prefix: result.prefix,
+      tokenStart: result.tokenStart,
+    });
+  }, [chatMode, cycle, input, cmdCtx]);
 
   const onKey = useCallback(
     (e: KeyboardEvent<HTMLInputElement>) => {
+      // Any non-Tab keypress invalidates the in-progress Tab cycle. Reset
+      // before the branch logic so subsequent code (and the onChange that
+      // follows for character keys) sees a clean slate.
+      if (e.key !== "Tab" && cycle !== null) {
+        setCycle(null);
+      }
       if (e.key === "Enter") {
         runCommand(input);
         setInput("");
@@ -378,7 +414,7 @@ export default function Terminal() {
         }
       }
     },
-    [input, history, histIdx, chatMode, chatStreaming, runCommand, handleTab, appendLine],
+    [input, history, histIdx, chatMode, chatStreaming, cycle, runCommand, handleTab, appendLine],
   );
 
   const promptStr = chatMode ? "pranav-chat>" : "pranav@dev:~$";
@@ -454,26 +490,37 @@ export default function Terminal() {
           ))}
 
           {booted && !chatStreaming && (
-            <div className="ptl-prompt-row ptl-line">
-              <span
-                className={chatMode ? "ptl-chat-prompt" : ""}
-                style={{ color: chatMode ? theme.accent2 : theme.prompt, fontWeight: 600 }}
-              >
-                {promptStr}
-              </span>
-              <input
-                ref={inputRef}
-                className="ptl-input"
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={onKey}
-                autoFocus
-                spellCheck={false}
-                autoComplete="off"
-                aria-label="terminal input"
-                placeholder={chatMode ? "ask something about Pranav..." : ""}
-              />
-            </div>
+            <>
+              <div className="ptl-prompt-row ptl-line">
+                <span
+                  className={chatMode ? "ptl-chat-prompt" : ""}
+                  style={{ color: chatMode ? theme.accent2 : theme.prompt, fontWeight: 600 }}
+                >
+                  {promptStr}
+                </span>
+                <input
+                  ref={inputRef}
+                  className="ptl-input"
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={onKey}
+                  autoFocus
+                  spellCheck={false}
+                  autoComplete="off"
+                  aria-label="terminal input"
+                  placeholder={chatMode ? "ask something about Pranav..." : ""}
+                />
+              </div>
+              {!chatMode && cycle !== null && (
+                <div
+                  className="ptl-cycle-list ptl-line"
+                  style={{ color: theme.dim, marginTop: 2 }}
+                  aria-live="polite"
+                >
+                  {cycle.candidates.join("  ")}
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>

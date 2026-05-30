@@ -35,6 +35,7 @@ export type Command = {
   help: string;
   aliases?: readonly string[];
   hidden?: boolean;
+  complete?: (args: string[], ctx: CommandContext) => readonly string[];
   run: (args: string[], ctx: CommandContext) => CommandResult;
 };
 
