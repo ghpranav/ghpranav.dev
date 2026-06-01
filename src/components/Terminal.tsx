@@ -1,16 +1,3 @@
-// ═══════════════════════════════════════════════════════════════════════════
-// GHPRANAV.DEV — Terminal portfolio with on-device LLM chat (`ask` command).
-//
-// The `ask` command opens a chat session that runs entirely on the
-// visitor's device:
-//   1. Chrome 138+ with Prompt API enabled  →  Gemini Nano
-//   2. Any WebGPU browser (Chrome/Edge)     →  WebLLM (Phi-3.5 mini, lazy-loaded)
-//   3. Anything else                        →  Polite refusal, suggest Chrome
-//
-// No API keys. No server. No tokens billed. The model answers questions
-// about Pranav using a fixed system prompt + bio context.
-// ═══════════════════════════════════════════════════════════════════════════
-
 import {
   Fragment,
   useCallback,
@@ -28,9 +15,16 @@ import { complete as completeInput } from "../lib/completion";
 import { closest } from "../lib/levenshtein";
 import {
   createChatSession,
-  detectBackend,
-  type Backend,
+  detectCapability,
+  resolveWebLLMModel,
+  isWebLLMModelCached,
+  resolveEngine,
+  loadEnginePreference,
+  saveEnginePreference,
+  MIN_GB,
+  type Capability,
   type ChatSession,
+  type ModelSelection,
 } from "../lib/llm";
 import type { CommandContext, TerminalLine } from "../types";
 
@@ -41,14 +35,15 @@ type CycleState = {
   tokenStart: number;
 };
 
+type PendingConsent =
+  | { kind: "single-engine"; engine: "nano" | "webllm"; cap: Capability; modelSelection: ModelSelection }
+  | { kind: "engine-choice"; cap: Capability; nanoLabel: string; webllmSelection: ModelSelection };
+
 import { Line } from "./Line";
 
 export default function Terminal() {
   const [theme, setThemeState] = useState<Theme>(() => loadTheme());
 
-  // Wrap the raw setter so every theme change is persisted to localStorage.
-  // The stored value is the registry KEY (e.g. "tokyo"), resolved by object
-  // identity — not the display `name` (which can differ, e.g. "tokyo-night").
   const setTheme = useCallback((next: Theme) => {
     setThemeState(next);
     const key = (Object.keys(THEMES) as ThemeName[]).find(
@@ -67,72 +62,60 @@ export default function Terminal() {
   const [chatSession, setChatSession] = useState<ChatSession | null>(null);
   const [chatStreaming, setChatStreaming] = useState(false);
   const streamAbortRef = useRef<AbortController | null>(null);
+  const [pendingConsent, setPendingConsent] = useState<PendingConsent | null>(null);
+  const [chatLoading, setChatLoading] = useState(false);
 
   const inputRef = useRef<HTMLInputElement | null>(null);
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const userScrolledUpRef = useRef(false);
 
-  // Cycle state is in `useState` (not `useRef`) because the candidate
-  // listing is rendered as an ephemeral block below the live prompt and
-  // must re-render when the cycle starts / advances / resets.
   const [cycle, setCycle] = useState<CycleState | null>(null);
 
   const appendLine = useCallback((line: TerminalLine) => {
     setLines((p) => [...p, line]);
   }, []);
 
-  const enterChat = useCallback(
-    async ({ flags }: { flags: string[] }) => {
-      setChatMode(true);
-      appendLine({ type: "text", text: "→ initializing on-device LLM..." });
+  const formatDownloadProgress = useCallback((progress: { loaded?: number; total?: number; text?: string }) => {
+    const rawRatio =
+      progress.total && progress.total > 0
+        ? (progress.loaded ?? 0) / progress.total
+        : (progress.loaded ?? 0);
+    const clampedRatio = Math.max(0, Math.min(rawRatio, 1));
 
-      const preferWebLLM = flags.includes("--webllm");
-      const detected: Backend = preferWebLLM ? "webllm" : await detectBackend();
+    return `  · download progress: ${Math.round(clampedRatio * 100)}%${
+      progress.text ? ` (${progress.text})` : ""
+    }`;
+  }, []);
 
-      if (detected === "none") {
-        appendLine({
-          type: "error",
-          text:
-            "no on-device LLM available in this browser.\n\n" +
-            "this site uses one of:\n" +
-            "  • Chrome 138+ with Prompt API enabled (chrome://flags/#prompt-api-for-gemini-nano)\n" +
-            "  • Any browser with WebGPU support (Chrome, Edge, Arc on recent hardware)\n\n" +
-            "everything runs locally. no API keys, no server, no tokens billed.\n" +
-            "type /exit to leave chat mode. or just `email` me — that always works.",
-        });
-        return;
-      }
-
-      if (detected === "prompt-api-download") {
-        appendLine({
-          type: "text",
-          text:
-            "→ Gemini Nano not yet downloaded on this device.\n" +
-            "  first message will trigger the ~4GB download. continue? type your first question or /exit.",
-        });
-      }
+  const startSession = useCallback(
+    async (cap: Capability, engine: "nano" | "webllm", modelSelection: ModelSelection) => {
+      const preferWebLLM = engine === "webllm";
+      const webLLMModel = modelSelection.kind === "webllm" ? modelSelection.modelId : undefined;
 
       try {
-        const session = await createChatSession(detected, {
-          preferWebLLM,
-          onProgress: (progress) => {
-            if (progress.phase === "download") {
-              const text = `  · download progress: ${Math.round((progress.loaded ?? 0) * 100)}%${
-                progress.text ? ` (${progress.text})` : ""
-              }`;
-              setLines((p) => {
-                const last = p[p.length - 1];
-                if (last && last.type === "text" && last.text.startsWith("  · download progress:")) {
-                  const out = [...p];
-                  out[out.length - 1] = { type: "text", text };
-                  return out;
-                }
-                return [...p, { type: "text", text }];
-              });
-            }
+        const session = await createChatSession(
+          preferWebLLM ? "webgpu" : cap.llmTier,
+          {
+            preferWebLLM,
+            webLLMModel,
+            onProgress: (progress) => {
+              if (progress.phase === "download") {
+                const text = formatDownloadProgress(progress);
+                setLines((p) => {
+                  const last = p[p.length - 1];
+                  if (last && last.type === "text" && last.text.startsWith("  · download progress:")) {
+                    const out = [...p];
+                    out[out.length - 1] = { type: "text", text };
+                    return out;
+                  }
+                  return [...p, { type: "text", text }];
+                });
+              }
+            },
           },
-        });
+        );
         setChatSession(session);
+        setChatLoading(false);
         appendLine({
           type: "text",
           text:
@@ -141,13 +124,133 @@ export default function Terminal() {
             `  commands: /exit · /clear · /model · /help\n`,
         });
       } catch (e) {
+        setChatLoading(false);
         appendLine({
           type: "error",
           text: `failed to initialize: ${e instanceof Error ? e.message : String(e)}`,
         });
       }
     },
-    [appendLine],
+    [appendLine, formatDownloadProgress],
+  );
+
+  const enterChat = useCallback(
+    async ({ flags }: { flags: string[] }) => {
+      setChatMode(true);
+      setChatLoading(true);
+      appendLine({ type: "text", text: "→ detecting on-device LLM capabilities..." });
+
+      const forceWebLLM = flags.includes("--webllm");
+      const cap = await detectCapability();
+      const pref = loadEnginePreference();
+
+      // ── Determine readiness per engine (cost-aware probing) ──────────
+      const nanoReady = cap.nanoStatus === "available" && !forceWebLLM;
+      const webgpuSelectable = cap.webgpu.usable &&
+        (cap.memoryGB === undefined || cap.memoryGB >= MIN_GB);
+
+      let webllmReady = false;
+      let webllmSelection: ModelSelection | null = null;
+
+      const needWebLLMProbe = forceWebLLM || (!nanoReady && webgpuSelectable);
+      if (needWebLLMProbe && webgpuSelectable) {
+        webllmSelection = await resolveWebLLMModel(cap);
+        if (webllmSelection.kind === "webllm") {
+          webllmReady = await isWebLLMModelCached(webllmSelection.modelId);
+        }
+      }
+
+      // ── Resolution order (Decision 6) ───────────────────────────────
+      const resolution = resolveEngine(cap, {
+        forceWebLLM,
+        pref,
+        nanoReady,
+        webllmReady,
+        webllmSelection,
+      });
+
+      if (resolution.action === "unsupported") {
+        const isMemoryIssue = cap.webgpu.usable && cap.memoryGB !== undefined && cap.memoryGB < MIN_GB;
+        appendLine({
+          type: "error",
+          text: isMemoryIssue
+            ? `this device doesn't have enough memory to run a local model (${cap.memoryGB}GB detected, ${MIN_GB}GB minimum).\n\n` +
+              "this feature requires one of:\n" +
+              "  • Chrome 138+ with Prompt API enabled (chrome://flags/#prompt-api-for-gemini-nano)\n" +
+              `  • a browser with WebGPU support and at least ${MIN_GB}GB memory\n\n` +
+              "everything runs locally — no API keys, no server, no data leaves your device.\n" +
+              "type `email` to reach out — that always works."
+            : "no on-device LLM available in this browser.\n\n" +
+              "this feature requires one of:\n" +
+              "  • Chrome 138+ with Prompt API enabled (chrome://flags/#prompt-api-for-gemini-nano)\n" +
+              "  • a browser with WebGPU support and sufficient memory (Chrome, Edge, Arc on recent hardware)\n\n" +
+              "everything runs locally — no API keys, no server, no data leaves your device.\n" +
+              "type `email` to reach out — that always works.",
+        });
+        setChatMode(false);
+        setChatLoading(false);
+        return;
+      }
+
+      if (resolution.action === "start") {
+        await startSession(cap, resolution.engine, resolution.modelSelection);
+        return;
+      }
+
+      if (resolution.action === "consent-choice" && resolution.webllmSelection.kind === "webllm") {
+        const nanoLabel = "~4GB, shared across sites";
+        const ws = resolution.webllmSelection;
+        const nanoDefault = pref === "nano" ? " [default]" : "";
+        const webllmDefault = pref === "webllm" ? " [default]" : "";
+        appendLine({
+          type: "text",
+          text:
+            "→ two on-device engines available, both need a one-time download:\n\n" +
+            `  [1] Gemini Nano (${nanoLabel})${nanoDefault}\n` +
+            `  [2] ${ws.modelId} (${ws.sizeLabel}, this site only)${webllmDefault}\n\n` +
+            "both run fully offline after download. no data leaves your device.\n" +
+            "type 1 or 2 to pick, or /exit to cancel.",
+        });
+        setPendingConsent({
+          kind: "engine-choice",
+          cap,
+          nanoLabel,
+          webllmSelection: ws,
+        });
+        setChatLoading(false);
+        return;
+      }
+
+      if (resolution.action === "consent-single") {
+        if (resolution.engine === "nano") {
+          appendLine({
+            type: "text",
+            text:
+              "→ Gemini Nano is available but needs a one-time download (~4GB, shared across sites).\n" +
+              "  runs fully offline after. no data leaves your device.\n" +
+              "  type y to download, n to decline, or /exit to cancel.",
+          });
+        } else {
+          const ws = resolution.modelSelection;
+          appendLine({
+            type: "text",
+            text:
+              `→ ${ws.kind === "webllm" ? ws.modelId : "WebLLM"} available via WebGPU — one-time download (${ws.kind === "webllm" ? ws.sizeLabel : "~2GB"}).\n` +
+              "  runs fully offline after. no data leaves your device.\n" +
+              "  type y to download, n to decline, or /exit to cancel.",
+          });
+        }
+        setPendingConsent({
+          kind: "single-engine",
+          engine: resolution.engine,
+          cap,
+          modelSelection: resolution.modelSelection,
+        });
+        setChatLoading(false);
+        return;
+      }
+    },
+    [appendLine, startSession],
   );
 
   const leaveChat = useCallback(() => {
@@ -156,6 +259,8 @@ export default function Terminal() {
     setChatSession(null);
     setChatMode(false);
     setChatStreaming(false);
+    setChatLoading(false);
+    setPendingConsent(null);
     appendLine({ type: "text", text: "→ exited chat. back to shell." });
   }, [chatSession, appendLine]);
 
@@ -242,7 +347,6 @@ export default function Terminal() {
       streamAbortRef.current = abort;
 
       let buffer = "";
-      // Push an empty assistant line we'll mutate as tokens stream in.
       setLines((p) => [...p, { type: "chat-assistant", text: "" }]);
 
       try {
@@ -276,6 +380,48 @@ export default function Terminal() {
     [chatSession, appendLine],
   );
 
+  // ─── Consent handler ────────────────────────────────────────────────────
+  const handleConsent = useCallback(
+    async (trimmed: string) => {
+      if (!pendingConsent) return;
+
+      if (trimmed === "/exit" || trimmed === "exit" || trimmed === "n" || trimmed === "no") {
+        leaveChat();
+        return;
+      }
+
+      if (pendingConsent.kind === "single-engine") {
+        if (trimmed === "y" || trimmed === "yes") {
+          setPendingConsent(null);
+          setChatLoading(true);
+          saveEnginePreference(pendingConsent.engine);
+          await startSession(pendingConsent.cap, pendingConsent.engine, pendingConsent.modelSelection);
+        } else {
+          appendLine({ type: "text", text: "type y to confirm download, n to decline, or /exit to cancel." });
+        }
+        return;
+      }
+
+      if (pendingConsent.kind === "engine-choice") {
+        if (trimmed === "1") {
+          setPendingConsent(null);
+          setChatLoading(true);
+          saveEnginePreference("nano");
+          await startSession(pendingConsent.cap, "nano", { kind: "nano" });
+        } else if (trimmed === "2") {
+          setPendingConsent(null);
+          setChatLoading(true);
+          saveEnginePreference("webllm");
+          await startSession(pendingConsent.cap, "webllm", pendingConsent.webllmSelection);
+        } else {
+          appendLine({ type: "text", text: "type 1 or 2 to pick an engine, or /exit to cancel." });
+        }
+        return;
+      }
+    },
+    [pendingConsent, leaveChat, startSession, appendLine],
+  );
+
   // ─── Top-level command runner ────────────────────────────────────────────
   const runCommand = useCallback(
     (raw: string) => {
@@ -293,6 +439,13 @@ export default function Terminal() {
           leaveChat();
           return;
         }
+
+        // Pending consent intercepts input before normal chat commands
+        if (pendingConsent) {
+          void handleConsent(trimmed);
+          return;
+        }
+
         if (trimmed === "/clear") {
           void chatSession?.destroy();
           setChatSession(null);
@@ -342,15 +495,12 @@ export default function Terminal() {
       const out = cmd.run(args);
       if (out) appendLine(out);
     },
-    [chatMode, chatSession, chatStreaming, commands, appendLine, enterChat, leaveChat, sendChat],
+    [chatMode, chatSession, chatStreaming, commands, pendingConsent, appendLine, enterChat, leaveChat, sendChat, handleConsent],
   );
 
   const handleTab = useCallback(() => {
     if (chatMode) return;
 
-    // Cycle path: we already started a cycle on a prior Tab and no other key
-    // has fired since. Advance through the candidates in place, in the live
-    // prompt; the ephemeral listing below it stays put.
     if (cycle !== null) {
       const next = (cycle.index + 1) % cycle.candidates.length;
       setInput(cycle.prefix + cycle.candidates[next]);
@@ -358,17 +508,12 @@ export default function Terminal() {
       return;
     }
 
-    // Fresh path: ask the helper what could complete.
     const result = completeInput(input, COMMAND_REGISTRY, cmdCtx);
     if (result.kind === "none") return;
     if (result.kind === "single") {
       setInput(result.replacement);
       return;
     }
-    // Many — fill the live prompt with the first candidate and start a
-    // cycle. The candidate list is rendered as an ephemeral block BELOW
-    // the live prompt (not in the scrollback transcript) so the prompt
-    // stays anchored where the user was typing.
     setInput(result.prefix + result.candidates[0]);
     setCycle({
       candidates: result.candidates,
@@ -380,9 +525,6 @@ export default function Terminal() {
 
   const onKey = useCallback(
     (e: KeyboardEvent<HTMLInputElement>) => {
-      // Any non-Tab keypress invalidates the in-progress Tab cycle. Reset
-      // before the branch logic so subsequent code (and the onChange that
-      // follows for character keys) sees a clean slate.
       if (e.key !== "Tab" && cycle !== null) {
         setCycle(null);
       }
@@ -442,11 +584,6 @@ export default function Terminal() {
         lineHeight: 1.55,
       }}
     >
-      {/*
-        Runtime-themed styles. Theme values are interpolated, so this block
-        is intentionally not extracted to a CSS file — it must re-render
-        when the theme changes.
-      */}
       <style>{`
         @keyframes blink { 0%, 49% { opacity: 1 } 50%, 100% { opacity: 0 } }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(2px) } to { opacity: 1; transform: translateY(0) } }
@@ -501,7 +638,7 @@ export default function Terminal() {
             />
           ))}
 
-          {booted && !chatStreaming && (
+          {booted && !chatStreaming && !chatLoading && (
             <>
               <div className="ptl-prompt-row ptl-line">
                 <span

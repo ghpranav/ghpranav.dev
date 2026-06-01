@@ -1,24 +1,18 @@
-// ═══════════════════════════════════════════════════════════════════════════
-// On-device LLM backend with cascading detection:
-//   1. Chrome Prompt API (Gemini Nano) — best UX, zero download for users who
-//      already have it; ~4GB one-time otherwise. Chrome 138+ + flag.
-//   2. WebLLM (@mlc-ai/web-llm) — works in any WebGPU browser. 800MB-2GB
-//      model download. Requires explicit opt-in to avoid surprise downloads.
-//   3. Nothing — throw a descriptive error the caller can render.
-//
-// All paths expose the same shape:
-//   { backend: string, stream(userMsg, signal): AsyncIterable<string>, destroy() }
-// ═══════════════════════════════════════════════════════════════════════════
-
 import { SYSTEM_PROMPT } from "../content/system-prompt";
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
-export type Backend =
-  | "prompt-api"           // ready immediately
-  | "prompt-api-download"  // supported but model not on disk
-  | "webllm"               // WebGPU present, opt-in for ~1GB download
-  | "none";                // unsupported browser
+export type NanoStatus = "available" | "downloadable" | "downloading" | "unavailable";
+
+export interface Capability {
+  llmTier: "prompt-api" | "prompt-api-download" | "webgpu" | "none";
+  nanoStatus: NanoStatus;
+  webgpu: { usable: boolean };
+  deviceClass: "desktop" | "mobile";
+  memoryGB?: number;
+  saveData?: boolean;
+  effectiveType?: string;
+}
 
 export type ProgressEvent =
   | { phase: "checking" }
@@ -34,6 +28,11 @@ export interface ChatSession {
 }
 
 export type ProgressCallback = (e: ProgressEvent) => void;
+
+export type ModelSelection =
+  | { kind: "nano" }
+  | { kind: "webllm"; modelId: string; sizeLabel: string }
+  | { kind: "unsupported"; reason: string };
 
 // ─── Type stubs for the Prompt API (until @types/dom-chromium-ai lands) ────
 
@@ -73,41 +72,239 @@ declare global {
   }
 }
 
-// Defense-in-depth: wrap user input in a delimiter referenced by the
-// system prompt's anti-injection rules.
 function wrapUserMessage(msg: string): string {
   return `<user_question>\n${msg}\n</user_question>`;
 }
 
-// ─── Detection ─────────────────────────────────────────────────────────────
+// ─── Constants ────────────────────────────────────────────────────────────
 
-export async function detectBackend(): Promise<Backend> {
-  if (typeof self !== "undefined" && "LanguageModel" in self) {
-    try {
-      const lm = (self as Window).LanguageModel;
-      if (lm) {
-        const status = await lm.availability({
-          expectedInputs: [{ type: "text", languages: ["en"] }],
-          expectedOutputs: [{ type: "text", languages: ["en"] }],
-        });
-        if (status === "available") return "prompt-api";
-        if (status === "downloadable" || status === "downloading") return "prompt-api-download";
-      }
-    } catch (e) {
-      console.warn("[llm] Prompt API availability check failed:", e);
-    }
+export const MIN_GB = 4;
+
+const STANDARD_MODEL = "Phi-3.5-mini-instruct-q4f16_1-MLC";
+const LIGHTER_MODEL = "Llama-3.2-1B-Instruct-q4f16_1-MLC";
+
+const TIER_MAP: Array<{ minGB: number; modelId: string }> = [
+  { minGB: 8, modelId: STANDARD_MODEL },
+  { minGB: MIN_GB, modelId: LIGHTER_MODEL },
+];
+
+// ─── Detection ────────────────────────────────────────────────────────────
+
+async function probeNano(): Promise<NanoStatus> {
+  if (typeof self === "undefined" || !("LanguageModel" in self)) return "unavailable";
+  try {
+    const lm = (self as Window).LanguageModel;
+    if (!lm) return "unavailable";
+    const status = await lm.availability({
+      expectedInputs: [{ type: "text", languages: ["en"] }],
+      expectedOutputs: [{ type: "text", languages: ["en"] }],
+    });
+    if (status === "available" || status === "downloadable" || status === "downloading") return status;
+    return "unavailable";
+  } catch (e) {
+    console.warn("[llm] Prompt API availability check failed:", e);
+    return "unavailable";
   }
-
-  if (typeof navigator !== "undefined" && "gpu" in navigator) {
-    // WebGPU present, but we don't auto-load WebLLM here — the caller is
-    // responsible for confirming the ~1GB download with the user.
-    return "webllm";
-  }
-
-  return "none";
 }
 
-// ─── Session factory ───────────────────────────────────────────────────────
+async function probeWebGPU(): Promise<boolean> {
+  if (typeof navigator === "undefined" || !("gpu" in navigator)) return false;
+  try {
+    const adapter = await (navigator as { gpu: GPU }).gpu.requestAdapter();
+    return adapter !== null;
+  } catch {
+    return false;
+  }
+}
+
+export function detectDeviceClass(): "desktop" | "mobile" {
+  if (typeof window === "undefined") return "desktop";
+  const coarse = window.matchMedia?.("(pointer: coarse)")?.matches ?? false;
+  return coarse ? "mobile" : "desktop";
+}
+
+export async function detectCapability(): Promise<Capability> {
+  const nanoStatus = await probeNano();
+  const webgpuUsable = await probeWebGPU();
+
+  let llmTier: Capability["llmTier"];
+  if (nanoStatus === "available") llmTier = "prompt-api";
+  else if (nanoStatus === "downloadable" || nanoStatus === "downloading") llmTier = "prompt-api-download";
+  else if (webgpuUsable) llmTier = "webgpu";
+  else llmTier = "none";
+
+  const deviceClass = detectDeviceClass();
+
+  const memoryGB: number | undefined =
+    typeof navigator !== "undefined" && "deviceMemory" in navigator
+      ? (navigator as { deviceMemory?: number }).deviceMemory
+      : undefined;
+
+  const conn =
+    typeof navigator !== "undefined" && "connection" in navigator
+      ? (navigator as { connection?: { saveData?: boolean; effectiveType?: string } }).connection
+      : undefined;
+
+  return {
+    llmTier,
+    nanoStatus,
+    webgpu: { usable: webgpuUsable },
+    deviceClass,
+    memoryGB,
+    saveData: conn?.saveData,
+    effectiveType: conn?.effectiveType,
+  };
+}
+
+// ─── Adaptive WebLLM model selection ──────────────────────────────────────
+
+export function pickWebLLMModel(cap: Capability): ModelSelection {
+  if (cap.memoryGB !== undefined && cap.memoryGB < MIN_GB) {
+    return {
+      kind: "unsupported",
+      reason: "this device doesn't have enough memory to run a local model.",
+    };
+  }
+
+  let targetId: string;
+  if (cap.memoryGB === undefined) {
+    targetId = cap.deviceClass === "desktop" ? STANDARD_MODEL : LIGHTER_MODEL;
+  } else {
+    const tier = TIER_MAP.find((t) => cap.memoryGB! >= t.minGB);
+    targetId = tier?.modelId ?? LIGHTER_MODEL;
+  }
+
+  return { kind: "webllm", modelId: targetId, sizeLabel: "" };
+}
+
+export async function resolveWebLLMModel(
+  cap: Capability,
+  forceModel?: string,
+): Promise<ModelSelection> {
+  const base = forceModel
+    ? { kind: "webllm" as const, modelId: forceModel, sizeLabel: "" }
+    : pickWebLLMModel(cap);
+
+  if (base.kind !== "webllm") return base;
+
+  const { prebuiltAppConfig } = await import("@mlc-ai/web-llm");
+  const listed = prebuiltAppConfig.model_list;
+  const match = listed.find((m) => m.model_id === base.modelId);
+
+  let modelId = base.modelId;
+  if (!match) {
+    const fallback = [...listed]
+      .filter((m) => m.vram_required_MB !== undefined)
+      .sort((a, b) => (b.vram_required_MB ?? 0) - (a.vram_required_MB ?? 0))
+      .find(() => true);
+    if (fallback) modelId = fallback.model_id;
+  }
+
+  const record = listed.find((m) => m.model_id === modelId);
+  const sizeLabel = record?.vram_required_MB
+    ? `~${(record.vram_required_MB / 1024).toFixed(1)}GB`
+    : "~2GB";
+
+  return { kind: "webllm", modelId, sizeLabel };
+}
+
+// ─── WebLLM cache check ──────────────────────────────────────────────────
+
+export async function isWebLLMModelCached(modelId: string): Promise<boolean> {
+  try {
+    const { hasModelInCache } = await import("@mlc-ai/web-llm");
+    return await hasModelInCache(modelId);
+  } catch {
+    return false;
+  }
+}
+
+// ─── Resolution order (Decision 6) ───────────────────────────────────────
+
+export type EngineResolution =
+  | { action: "start"; engine: "nano" | "webllm"; modelSelection: ModelSelection }
+  | { action: "consent-single"; engine: "nano" | "webllm"; modelSelection: ModelSelection }
+  | { action: "consent-choice"; webllmSelection: ModelSelection }
+  | { action: "unsupported"; reason: string };
+
+export function resolveEngine(
+  cap: Capability,
+  opts: {
+    forceWebLLM: boolean;
+    pref: "nano" | "webllm" | null;
+    nanoReady: boolean;
+    webllmReady: boolean;
+    webllmSelection: ModelSelection | null;
+  },
+): EngineResolution {
+  const { forceWebLLM, pref, nanoReady, webllmReady, webllmSelection } = opts;
+
+  const nanoDownloadable =
+    (cap.nanoStatus === "downloadable" || cap.nanoStatus === "downloading") && !forceWebLLM;
+  const webgpuSelectable =
+    cap.webgpu.usable && (cap.memoryGB === undefined || cap.memoryGB >= MIN_GB);
+
+  // Unsupported: no engine at all
+  if (cap.nanoStatus === "unavailable" && !cap.webgpu.usable && !forceWebLLM) {
+    return { action: "unsupported", reason: "no on-device LLM available in this browser." };
+  }
+
+  // Unsupported: WebGPU present but insufficient memory
+  if (cap.nanoStatus === "unavailable" && cap.webgpu.usable &&
+      cap.memoryGB !== undefined && cap.memoryGB < MIN_GB && !forceWebLLM) {
+    return {
+      action: "unsupported",
+      reason: `this device doesn't have enough memory to run a local model (${cap.memoryGB}GB detected, ${MIN_GB}GB minimum).`,
+    };
+  }
+
+  // 1. Ready engine → start immediately
+  if (nanoReady || webllmReady) {
+    let engine: "nano" | "webllm";
+    if (nanoReady && webllmReady) {
+      engine = pref === "webllm" ? "webllm" : "nano";
+    } else {
+      engine = nanoReady ? "nano" : "webllm";
+    }
+    const sel: ModelSelection = engine === "nano" ? { kind: "nano" } : webllmSelection!;
+    return { action: "start", engine, modelSelection: sel };
+  }
+
+  // 2. Both engines need a download → choice prompt
+  if (nanoDownloadable && webgpuSelectable && webllmSelection?.kind === "webllm") {
+    return { action: "consent-choice", webllmSelection };
+  }
+
+  // 3. Exactly one engine needs a download → single consent
+  if (nanoDownloadable) {
+    return { action: "consent-single", engine: "nano", modelSelection: { kind: "nano" } };
+  }
+  if (webgpuSelectable && webllmSelection?.kind === "webllm") {
+    return { action: "consent-single", engine: "webllm", modelSelection: webllmSelection };
+  }
+
+  return { action: "unsupported", reason: "no on-device LLM available in this browser." };
+}
+
+// ─── Engine persistence ──────────────────────────────────────────────────
+
+const ENGINE_KEY = "ghpranav.dev:ask-engine";
+
+export function loadEnginePreference(): "nano" | "webllm" | null {
+  try {
+    const v = localStorage.getItem(ENGINE_KEY);
+    if (v === "nano" || v === "webllm") return v;
+  } catch { /* best-effort */ }
+  return null;
+}
+
+export function saveEnginePreference(engine: "nano" | "webllm"): void {
+  try {
+    localStorage.setItem(ENGINE_KEY, engine);
+  } catch { /* best-effort */ }
+}
+
+// ─── Session factory ─────────────────────────────────────────────────────
 
 export interface CreateSessionOptions {
   preferWebLLM?: boolean;
@@ -116,7 +313,7 @@ export interface CreateSessionOptions {
 }
 
 export async function createChatSession(
-  backend: Backend,
+  backend: Capability["llmTier"],
   options: CreateSessionOptions = {},
 ): Promise<ChatSession> {
   const { onProgress } = options;
@@ -129,7 +326,7 @@ export async function createChatSession(
 
     const session = await lm.create({
       initialPrompts: [{ role: "system", content: SYSTEM_PROMPT }],
-      temperature: 0.3, // low — accurate bio recall, not creative writing
+      temperature: 0.3,
       topK: 3,
       monitor(m) {
         m.addEventListener("downloadprogress", (event) => {
@@ -151,14 +348,12 @@ export async function createChatSession(
     };
   }
 
-  // ─── Path 2: WebLLM ───────────────────────────────────────────────────
-  if (backend === "webllm" || options.preferWebLLM) {
+  // ─── Path 2: WebLLM ──────────────────────────────────────────────────
+  if (backend === "webgpu" || options.preferWebLLM) {
     onProgress?.({ phase: "loading-runtime" });
-    // Dynamic import keeps the WebLLM bundle (~200KB JS + the model) out of
-    // the initial page load. Only fetched when the user runs `ask`.
     const { CreateMLCEngine } = await import("@mlc-ai/web-llm");
 
-    const modelId = options.webLLMModel ?? "Phi-3.5-mini-instruct-q4f16_1-MLC";
+    const modelId = options.webLLMModel ?? STANDARD_MODEL;
 
     const engine = await CreateMLCEngine(modelId, {
       initProgressCallback: (r: { progress: number; text: string }) => {
@@ -191,14 +386,12 @@ export async function createChatSession(
       destroy: async () => {
         try {
           await engine.unload();
-        } catch {
-          // best-effort
-        }
+        } catch { /* best-effort */ }
       },
     };
   }
 
-  // ─── Path 3: Nothing ──────────────────────────────────────────────────
+  // ─── Path 3: Nothing ─────────────────────────────────────────────────
   throw new Error(
     "no on-device LLM backend available in this browser.\n" +
       "supported:\n" +
@@ -208,8 +401,6 @@ export async function createChatSession(
   );
 }
 
-// The Prompt API's monitor() emits a CustomEvent-ish object — typed loosely
-// because the spec is still in flux.
 interface ProgressEventLike {
   loaded?: number;
   total?: number;
