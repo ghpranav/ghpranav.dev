@@ -48,8 +48,10 @@ export function Line({ line, theme, streaming }: LineProps) {
       return wrap(
         <span style={{ color: theme.fg }}>
           <span style={{ color: theme.accent, fontWeight: 600 }}>ai › </span>
-          {line.text}
-          {streaming && <span className="ptl-streaming-cursor" />}
+          {/* aria-hidden while streaming so the live region doesn't announce per-token;
+              removed on completion so the finalized answer is announced once */}
+          <span aria-hidden={streaming || undefined}>{line.text}</span>
+          {streaming && <span className="ptl-streaming-cursor" aria-hidden />}
         </span>,
       );
 
