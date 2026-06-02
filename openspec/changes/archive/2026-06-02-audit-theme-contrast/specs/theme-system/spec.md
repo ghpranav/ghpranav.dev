@@ -62,3 +62,17 @@ The theme module SHALL provide a pure, exported `contrastRatio(fg: string, bg: s
 - **GIVEN** the repository test command `bun run test`
 - **WHEN** it runs without `E2E` set
 - **THEN** the contrast guardrail test executes and reports pass/fail per theme
+
+### Requirement: Static shell theme table stays in sync with THEMES registry
+
+The `index.html` pre-loader script SHALL embed a theme table whose values mirror the `THEMES` registry: every color role present in both (`bg`, `panel`, `fg`, `dim`, `accent2`, `grain`) SHALL be identical, the derived RGB triplets (`bgRgb` for `bg`, `dimRgb` for `dim`) SHALL equal their decimal R, G, B decomposition, and every theme present in `THEMES` SHALL have a matching entry in the table. When any synced color role changes in `src/themes/<name>.ts`, the corresponding entry in `index.html` SHALL be updated in the same commit. When a new theme is added to `THEMES`, a matching entry SHALL be added to the static shell table. A guardrail test SHALL verify this sync so that drift is caught before it ships.
+
+#### Scenario: Static shell matches THEMES registry
+- **GIVEN** the `THEMES` registry and the static shell theme table in `index.html`
+- **WHEN** the sync guardrail runs
+- **THEN** every synced color field in the static shell matches the corresponding `THEMES` value for every registered theme, and every RGB triplet matches the hex decomposition
+
+#### Scenario: Drift is caught
+- **GIVEN** a developer changes `dim` in `src/themes/nord.ts` but forgets to update `index.html`
+- **WHEN** `bun run test` runs
+- **THEN** the sync guardrail fails, naming the theme and the mismatched field
