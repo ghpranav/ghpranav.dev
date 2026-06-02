@@ -183,17 +183,16 @@ Each command's observable behavior SHALL be:
 
 ### Requirement: Performance budget
 
-Command dispatch SHALL NOT introduce lazy chunks, dynamic imports, or any new runtime work at dispatch time. All command modules SHALL be statically imported by `src/commands/index.ts` so the dispatch table is built synchronously at terminal mount. The only dynamic import in the codebase SHALL be `@mlc-ai/web-llm` (lazy-loaded only when the user runs `ask --webllm`).
+Command dispatch SHALL NOT introduce lazy chunks or dynamic imports within command modules or registry code. All command modules SHALL be statically imported by `src/commands/index.ts` so the dispatch table is built synchronously at terminal mount. Runtime work that happens after `ask` enters the chat flow MAY lazily import the LLM path, but that SHALL remain outside the command modules and registry.
 
 #### Scenario: No dynamic imports in command code
 - **GIVEN** the source tree under `src/commands/` and `src/types.ts`
 - **WHEN** a developer greps for `import(` expressions
 - **THEN** no matches are found in command code or registry code
-- **AND** the only `import(` in the codebase is the WebLLM lazy load in `src/lib/llm.ts`
 
 #### Scenario: Initial JS bundle stays small
 - **GIVEN** a production build
-- **WHEN** the gzipped size of the initial JS asset(s) is measured (excluding the lazily-imported WebLLM chunk)
+- **WHEN** the gzipped size of the initial JS asset(s) is measured (excluding lazily-imported ask-related LLM chunks)
 - **THEN** the size is within the project's stated 60 KB budget
 
 ### Requirement: Tab completes the command name in shell mode

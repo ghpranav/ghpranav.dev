@@ -13,19 +13,7 @@ import { ASCII_NAME } from "../content/site";
 import { buildCommands, COMMAND_REGISTRY } from "../commands";
 import { complete as completeInput } from "../lib/completion";
 import { closest } from "../lib/levenshtein";
-import {
-  createChatSession,
-  detectCapability,
-  resolveWebLLMModel,
-  isWebLLMModelCached,
-  resolveEngine,
-  loadEnginePreference,
-  saveEnginePreference,
-  MIN_GB,
-  type Capability,
-  type ChatSession,
-  type ModelSelection,
-} from "../lib/llm";
+import type { Capability, ChatSession, ModelSelection } from "../lib/llm";
 import type { CommandContext, TerminalLine } from "../types";
 
 type CycleState = {
@@ -40,6 +28,15 @@ type PendingConsent =
   | { kind: "engine-choice"; cap: Capability; nanoLabel: string; webllmSelection: ModelSelection };
 
 import { Line } from "./Line";
+
+type LLMModule = typeof import("../lib/llm");
+
+let llmModulePromise: Promise<LLMModule> | null = null;
+
+function loadLLMModule(): Promise<LLMModule> {
+  llmModulePromise ??= import("../lib/llm");
+  return llmModulePromise;
+}
 
 // Reject as soon as `signal` aborts, without waiting for `promise` to settle.
 // Lets the UI drop back to the shell immediately even when the underlying load
@@ -108,6 +105,7 @@ export default function Terminal() {
     async (cap: Capability, engine: "nano" | "webllm", modelSelection: ModelSelection) => {
       const preferWebLLM = engine === "webllm";
       const webLLMModel = modelSelection.kind === "webllm" ? modelSelection.modelId : undefined;
+      const { createChatSession } = await loadLLMModule();
 
       const abort = new AbortController();
       setLoadAbort(abort);
@@ -173,28 +171,30 @@ export default function Terminal() {
       setChatLoading(true);
       appendLine({ type: "text", text: "→ detecting on-device LLM capabilities..." });
 
+      const llm = await loadLLMModule();
       const forceWebLLM = flags.includes("--webllm");
-      const cap = await detectCapability();
-      const pref = loadEnginePreference();
+      const cap = await llm.detectCapability();
+      const pref = llm.loadEnginePreference();
+      const minGB = llm.MIN_GB;
 
       // ── Determine readiness per engine (cost-aware probing) ──────────
       const nanoReady = cap.nanoStatus === "available" && !forceWebLLM;
       const webgpuSelectable = cap.webgpu.usable &&
-        (cap.memoryGB === undefined || cap.memoryGB >= MIN_GB);
+        (cap.memoryGB === undefined || cap.memoryGB >= minGB);
 
       let webllmReady = false;
       let webllmSelection: ModelSelection | null = null;
 
       const needWebLLMProbe = forceWebLLM || (!nanoReady && webgpuSelectable);
       if (needWebLLMProbe && webgpuSelectable) {
-        webllmSelection = await resolveWebLLMModel(cap);
+        webllmSelection = await llm.resolveWebLLMModel(cap);
         if (webllmSelection.kind === "webllm") {
-          webllmReady = await isWebLLMModelCached(webllmSelection.modelId);
+          webllmReady = await llm.isWebLLMModelCached(webllmSelection.modelId);
         }
       }
 
       // ── Resolution order (Decision 6) ───────────────────────────────
-      const resolution = resolveEngine(cap, {
+      const resolution = llm.resolveEngine(cap, {
         forceWebLLM,
         pref,
         nanoReady,
@@ -203,14 +203,14 @@ export default function Terminal() {
       });
 
       if (resolution.action === "unsupported") {
-        const isMemoryIssue = cap.webgpu.usable && cap.memoryGB !== undefined && cap.memoryGB < MIN_GB;
+        const isMemoryIssue = cap.webgpu.usable && cap.memoryGB !== undefined && cap.memoryGB < minGB;
         appendLine({
           type: "error",
           text: isMemoryIssue
-            ? `this device doesn't have enough memory to run a local model (${cap.memoryGB}GB detected, ${MIN_GB}GB minimum).\n\n` +
+            ? `this device doesn't have enough memory to run a local model (${cap.memoryGB}GB detected, ${minGB}GB minimum).\n\n` +
               "this feature requires one of:\n" +
               "  • Chrome 138+ with Prompt API enabled (chrome://flags/#prompt-api-for-gemini-nano)\n" +
-              `  • a browser with WebGPU support and at least ${MIN_GB}GB memory\n\n` +
+              `  • a browser with WebGPU support and at least ${minGB}GB memory\n\n` +
               "everything runs locally — no API keys, no server, no data leaves your device.\n" +
               "type `email` to reach out — that always works."
             : "no on-device LLM available in this browser.\n\n" +
@@ -441,6 +441,7 @@ export default function Terminal() {
         if (trimmed === "y" || trimmed === "yes") {
           setPendingConsent(null);
           setChatLoading(true);
+          const { saveEnginePreference } = await loadLLMModule();
           saveEnginePreference(pendingConsent.engine);
           await startSession(pendingConsent.cap, pendingConsent.engine, pendingConsent.modelSelection);
         } else {
@@ -453,11 +454,13 @@ export default function Terminal() {
         if (trimmed === "1") {
           setPendingConsent(null);
           setChatLoading(true);
+          const { saveEnginePreference } = await loadLLMModule();
           saveEnginePreference("nano");
           await startSession(pendingConsent.cap, "nano", { kind: "nano" });
         } else if (trimmed === "2") {
           setPendingConsent(null);
           setChatLoading(true);
+          const { saveEnginePreference } = await loadLLMModule();
           saveEnginePreference("webllm");
           await startSession(pendingConsent.cap, "webllm", pendingConsent.webllmSelection);
         } else {

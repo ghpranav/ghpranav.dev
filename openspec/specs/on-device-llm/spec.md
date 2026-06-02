@@ -18,14 +18,15 @@ The site SHALL run all LLM inference locally in the visitor's browser. The site 
 
 ### Requirement: `ask` is opt-in
 
-The `ask` command SHALL be the only way to enter chat mode. Before the user invokes `ask`, the site SHALL NOT initialize an LLM backend, request model weights, or load the WebLLM bundle. After `ask`, the site MAY inspect WebLLM metadata or cache state as part of engine resolution, but it SHALL NOT create a chat session or request model weights until it either selects a ready engine or the visitor confirms a download.
+The `ask` command SHALL be the only way to enter chat mode. Before the user invokes `ask`, the site SHALL NOT initialize an LLM backend, request model weights, or load the lazily-imported LLM runtime module (`src/lib/llm.ts`) or the WebLLM bundle. After `ask`, the terminal MAY lazily import `src/lib/llm.ts` and inspect WebLLM metadata or cache state as part of engine resolution, but it SHALL NOT create a chat session or request model weights until it either selects a ready engine or the visitor confirms a download.
 
 The `ask` command implementation SHALL be a thin wrapper that calls `ctx.enterChat({ flags: args })` and returns `null`.
 
 #### Scenario: Idle visit downloads nothing
 - **GIVEN** a visitor loads the site and does not run `ask`
 - **WHEN** they remain in shell mode for the duration of the session
-- **THEN** the WebLLM dynamic import is not requested
+- **THEN** the `src/lib/llm.ts` lazy import is not requested
+- **AND** the WebLLM dynamic import is not requested
 - **AND** no model weights are downloaded
 
 #### Scenario: ask delegates to enterChat
@@ -313,21 +314,26 @@ When a model download is triggered after consent (the Prompt API first-use downl
 - **THEN** only one progress line exists in the rendered output
 - **AND** its text is replaced with each event's updated percentage
 
-### Requirement: WebLLM is lazily imported
+### Requirement: LLM runtime is lazily imported
 
-The WebLLM runtime (`@mlc-ai/web-llm`) SHALL be loaded via dynamic `import("@mlc-ai/web-llm")` calls. The runtime SHALL NOT be statically imported anywhere in the initial bundle. Vite SHALL be configured to exclude the package from prebundling.
+The terminal SHALL load the LLM coordination module (`src/lib/llm.ts`) via dynamic `import("../lib/llm")` only after the user invokes `ask`. The WebLLM runtime (`@mlc-ai/web-llm`) SHALL continue to be loaded via dynamic `import("@mlc-ai/web-llm")` calls from that LLM path. Neither module SHALL be statically imported anywhere in the initial bundle. Vite SHALL be configured to exclude `@mlc-ai/web-llm` from prebundling.
 
-The runtime MAY be imported after `ask` for WebLLM model metadata or cache inspection, and SHALL be imported again or reused when a WebLLM session is created. The WebLLM chunk SHALL never be part of the initial page load, and model weights SHALL begin downloading only once the visitor has confirmed a download-requiring WebLLM path or the selected model is already cached.
+The LLM coordination module MAY be imported after `ask` for capability detection, engine resolution, WebLLM model metadata, or cache inspection, and the WebLLM runtime SHALL be imported again or reused when a WebLLM session is created. Ask-related LLM chunks SHALL never be part of the initial page load, and model weights SHALL begin downloading only once the visitor has confirmed a download-requiring WebLLM path or the selected model is already cached.
 
-#### Scenario: Bundle excludes WebLLM runtime code
+#### Scenario: Bundle excludes ask runtime code
 - **GIVEN** a production build of the site
 - **WHEN** the initial JS chunks are inspected
-- **THEN** they do not contain WebLLM runtime code
-- **AND** the build's chunk graph shows WebLLM as a separate lazy chunk
+- **THEN** they do not contain `src/lib/llm.ts` coordination code or WebLLM runtime code
+- **AND** the build's chunk graph shows the ask-related LLM code outside the initial page load
 
-#### Scenario: WebLLM path loads the runtime lazily
+#### Scenario: ask path loads the runtime lazily
 - **GIVEN** a visitor who has not yet run `ask`
-- **WHEN** they run `ask` and engine resolution or session creation depends on WebLLM
+- **WHEN** they run `ask`
+- **THEN** the `src/lib/llm.ts` chunk is fetched at that moment rather than on initial page load
+
+#### Scenario: WebLLM path still loads the runtime lazily
+- **GIVEN** a visitor who has already run `ask`
+- **WHEN** engine resolution or session creation depends on WebLLM
 - **THEN** the WebLLM chunk is fetched at that moment rather than on initial page load
 - **AND** WebLLM model weights begin downloading only after the visitor confirms a download-requiring path
 
