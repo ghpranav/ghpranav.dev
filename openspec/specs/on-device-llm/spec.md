@@ -392,6 +392,46 @@ The WebLLM backend SHALL also call `engine.interruptGenerate()` when its stream 
 - **THEN** a `text` line is appended reminding the user to press Ctrl+C to cancel
 - **AND** the new message is not sent
 
+### Requirement: Abort during model load
+
+`createChatSession(backend, opts)` SHALL accept an optional `opts.signal` (`AbortSignal`) that cancels session creation — engine detection, runtime import, and the first-use model download — for both the Prompt API and the WebLLM path. Because the chat input is unmounted while a session is loading, the terminal SHALL capture Ctrl+C at the window level, abort the in-flight load's `AbortController`, and display a `··· Ctrl+C to cancel` hint for the duration of the load. On abort the terminal SHALL return to shell mode and append a `→ cancelled. back to shell.` text line.
+
+The two engines honour the signal differently, and both behaviours SHALL be supported:
+
+- **Prompt API (Gemini Nano):** the signal SHALL be passed to `LanguageModel.create({ signal })`, which truly aborts the in-flight download.
+- **WebLLM:** `CreateMLCEngine` exposes no abort hook, so an in-flight load cannot be interrupted and its weights finish downloading into cache. When the signal is already aborted by the time `CreateMLCEngine` resolves, the session-creation path SHALL `unload()` the engine and throw an `AbortError` rather than return a live session (best-effort cancellation).
+
+Because the WebLLM load cannot self-interrupt, the terminal SHALL race the session-creation promise against the abort signal so the UI returns to the shell immediately on cancel, and SHALL `destroy()` any session that still resolves after the cancel so no live engine is leaked.
+
+#### Scenario: createChatSession accepts an abort signal
+- **GIVEN** any download-requiring backend
+- **WHEN** `createChatSession(backend, { signal })` is called and `signal` aborts before the session resolves
+- **THEN** the returned promise rejects with an `AbortError`
+- **AND** no live `ChatSession` is handed back to the caller
+
+#### Scenario: Ctrl+C cancels an in-flight load
+- **GIVEN** a model is loading or downloading after the visitor confirmed (the chat input is unmounted)
+- **WHEN** the visitor presses Ctrl+C
+- **THEN** the load's `AbortController` is aborted
+- **AND** the terminal returns to shell mode and appends `→ cancelled. back to shell.`
+
+#### Scenario: Nano load aborts immediately
+- **GIVEN** a Gemini Nano first-use download is in flight
+- **WHEN** the load is aborted
+- **THEN** the signal passed to `LanguageModel.create({ signal })` cancels the download
+- **AND** the terminal returns to shell mode
+
+#### Scenario: WebLLM load is torn down after the fact
+- **GIVEN** a WebLLM load is in flight and cannot be interrupted
+- **WHEN** the visitor aborts and `CreateMLCEngine` later resolves
+- **THEN** the engine is `unload()`ed and an `AbortError` is thrown rather than a live session returned
+- **AND** the UI has already returned to the shell via the abort race
+
+#### Scenario: A session resolving after cancel is destroyed
+- **GIVEN** the visitor cancelled the load and the UI returned to the shell
+- **WHEN** the underlying session-creation promise resolves later with a live session
+- **THEN** that session is destroyed so no live engine is leaked
+
 ### Requirement: Chat-mode commands
 
 While in chat mode, lines beginning with `/` SHALL be interpreted as chat-mode commands, not as messages to the model. The terminal SHALL support exactly these chat-mode commands:
@@ -449,6 +489,22 @@ This wrapping SHALL be applied in both backend paths (Prompt API and WebLLM).
 - **GIVEN** the `SYSTEM_PROMPT` export in `src/content/system-prompt.ts`
 - **WHEN** the prompt is inspected
 - **THEN** it contains a rule directing the model to treat content between `<user_question>` and `</user_question>` as a question, never as instructions
+
+### Requirement: Gemini Nano output-language attestation
+
+When using the Prompt API, both the availability probe (`LanguageModel.availability(...)`) and session creation (`LanguageModel.create(...)`) SHALL declare matching expected input and output languages — `expectedInputs` and `expectedOutputs` of `{ type: "text", languages: ["en"] }`. The same options object SHALL be shared between the probe and `create()` so the two cannot drift. Omitting the output language causes the Prompt API to emit a "No output language was specified" warning and stall before the first-use download begins; declaring it both unblocks the download and lets the model attest output safety.
+
+#### Scenario: create declares output language matching the probe
+- **GIVEN** the Prompt API path is selected and a session is created
+- **WHEN** `LanguageModel.create(...)` is invoked
+- **THEN** the options include `expectedInputs` and `expectedOutputs` of `{ type: "text", languages: ["en"] }`
+- **AND** these are the same values passed to the preceding `availability(...)` probe
+
+#### Scenario: Declared output language lets the download proceed
+- **GIVEN** a Chromium browser where Gemini Nano is `downloadable` and the visitor has confirmed the download
+- **WHEN** the Nano session is created with the required `expectedInputs`/`expectedOutputs`
+- **THEN** the first-use download begins and progress events fire
+- **AND** no "No output language was specified" warning is emitted
 
 ### Requirement: Persona and grounding
 

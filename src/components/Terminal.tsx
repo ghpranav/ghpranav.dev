@@ -41,6 +41,22 @@ type PendingConsent =
 
 import { Line } from "./Line";
 
+// Reject as soon as `signal` aborts, without waiting for `promise` to settle.
+// Lets the UI drop back to the shell immediately even when the underlying load
+// (e.g. WebLLM's CreateMLCEngine) has no way to interrupt itself.
+function raceAbort<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const abortError = () => new DOMException("Aborted", "AbortError");
+    if (signal.aborted) return reject(abortError());
+    const onAbort = () => reject(abortError());
+    signal.addEventListener("abort", onAbort, { once: true });
+    promise.then(
+      (v) => { signal.removeEventListener("abort", onAbort); resolve(v); },
+      (e) => { signal.removeEventListener("abort", onAbort); reject(e); },
+    );
+  });
+}
+
 export default function Terminal() {
   const [theme, setThemeState] = useState<Theme>(() => loadTheme());
 
@@ -62,6 +78,7 @@ export default function Terminal() {
   const [chatSession, setChatSession] = useState<ChatSession | null>(null);
   const [chatStreaming, setChatStreaming] = useState(false);
   const streamAbortRef = useRef<AbortController | null>(null);
+  const [loadAbort, setLoadAbort] = useState<AbortController | null>(null);
   const [pendingConsent, setPendingConsent] = useState<PendingConsent | null>(null);
   const [chatLoading, setChatLoading] = useState(false);
 
@@ -92,28 +109,38 @@ export default function Terminal() {
       const preferWebLLM = engine === "webllm";
       const webLLMModel = modelSelection.kind === "webllm" ? modelSelection.modelId : undefined;
 
+      const abort = new AbortController();
+      setLoadAbort(abort);
+
+      const sessionPromise = createChatSession(preferWebLLM ? "webgpu" : cap.llmTier, {
+        preferWebLLM,
+        webLLMModel,
+        signal: abort.signal,
+        onProgress: (progress) => {
+          if (abort.signal.aborted || progress.phase !== "download") return;
+          const text = formatDownloadProgress(progress);
+          setLines((p) => {
+            const last = p[p.length - 1];
+            if (last && last.type === "text" && last.text.startsWith("  · download progress:")) {
+              const out = [...p];
+              out[out.length - 1] = { type: "text", text };
+              return out;
+            }
+            return [...p, { type: "text", text }];
+          });
+        },
+      });
+
+      // If cancel wins the race, a session that still resolves later is orphaned
+      // — destroy it so we don't leak a live engine.
+      sessionPromise.then(
+        (s) => { if (abort.signal.aborted) void s.destroy(); },
+        () => { /* failure surfaced via raceAbort below */ },
+      );
+
       try {
-        const session = await createChatSession(
-          preferWebLLM ? "webgpu" : cap.llmTier,
-          {
-            preferWebLLM,
-            webLLMModel,
-            onProgress: (progress) => {
-              if (progress.phase === "download") {
-                const text = formatDownloadProgress(progress);
-                setLines((p) => {
-                  const last = p[p.length - 1];
-                  if (last && last.type === "text" && last.text.startsWith("  · download progress:")) {
-                    const out = [...p];
-                    out[out.length - 1] = { type: "text", text };
-                    return out;
-                  }
-                  return [...p, { type: "text", text }];
-                });
-              }
-            },
-          },
-        );
+        const session = await raceAbort(sessionPromise, abort.signal);
+        setLoadAbort(null);
         setChatSession(session);
         setChatLoading(false);
         appendLine({
@@ -124,11 +151,17 @@ export default function Terminal() {
             `  commands: /exit · /clear · /model · /help\n`,
         });
       } catch (e) {
+        setLoadAbort(null);
         setChatLoading(false);
-        appendLine({
-          type: "error",
-          text: `failed to initialize: ${e instanceof Error ? e.message : String(e)}`,
-        });
+        if (e instanceof Error && e.name === "AbortError") {
+          setChatMode(false);
+          appendLine({ type: "text", text: "→ cancelled. back to shell." });
+        } else {
+          appendLine({
+            type: "error",
+            text: `failed to initialize: ${e instanceof Error ? e.message : String(e)}`,
+          });
+        }
       }
     },
     [appendLine, formatDownloadProgress],
@@ -331,6 +364,19 @@ export default function Terminal() {
     window.addEventListener("click", h);
     return () => window.removeEventListener("click", h);
   }, [focusInput]);
+
+  // The input is unmounted while loading, so capture Ctrl+C at the window to
+  // cancel an in-flight detection/download.
+  useEffect(() => {
+    if (!loadAbort) return;
+    const onKeyDown = (e: globalThis.KeyboardEvent) => {
+      if (e.ctrlKey && (e.key === "c" || e.key === "C")) {
+        loadAbort.abort();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [loadAbort]);
 
   // ─── Chat-mode message sending ───────────────────────────────────────────
   const sendChat = useCallback(
@@ -637,6 +683,12 @@ export default function Terminal() {
               }
             />
           ))}
+
+          {booted && chatLoading && (
+            <div className="ptl-line" style={{ color: theme.dim, marginTop: 4 }}>
+              ··· Ctrl+C to cancel
+            </div>
+          )}
 
           {booted && !chatStreaming && !chatLoading && (
             <>

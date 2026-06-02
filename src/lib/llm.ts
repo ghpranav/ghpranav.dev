@@ -58,6 +58,8 @@ declare global {
   interface CreateOptions {
     systemPrompt?: string;
     initialPrompts?: Array<{ role: "system" | "user" | "assistant"; content: string }>;
+    expectedInputs?: AvailabilityOptions["expectedInputs"];
+    expectedOutputs?: AvailabilityOptions["expectedOutputs"];
     temperature?: number;
     topK?: number;
     monitor?: (m: EventTarget) => void;
@@ -88,6 +90,15 @@ const TIER_MAP: Array<{ minGB: number; modelId: string }> = [
   { minGB: MIN_GB, modelId: LIGHTER_MODEL },
 ];
 
+// Chrome requires create()'s options to match the availability() probe, and an
+// explicit output language so the model can attest output safety. Omit it and
+// create() emits "No output language was specified" then stalls before the
+// download starts. Shared so the probe and create() can't drift apart.
+const NANO_IO_OPTIONS: Pick<AvailabilityOptions, "expectedInputs" | "expectedOutputs"> = {
+  expectedInputs: [{ type: "text", languages: ["en"] }],
+  expectedOutputs: [{ type: "text", languages: ["en"] }],
+};
+
 // ─── Detection ────────────────────────────────────────────────────────────
 
 async function probeNano(): Promise<NanoStatus> {
@@ -95,10 +106,7 @@ async function probeNano(): Promise<NanoStatus> {
   try {
     const lm = (self as Window).LanguageModel;
     if (!lm) return "unavailable";
-    const status = await lm.availability({
-      expectedInputs: [{ type: "text", languages: ["en"] }],
-      expectedOutputs: [{ type: "text", languages: ["en"] }],
-    });
+    const status = await lm.availability(NANO_IO_OPTIONS);
     if (status === "available" || status === "downloadable" || status === "downloading") return status;
     return "unavailable";
   } catch (e) {
@@ -309,6 +317,7 @@ export function saveEnginePreference(engine: "nano" | "webllm"): void {
 export interface CreateSessionOptions {
   preferWebLLM?: boolean;
   webLLMModel?: string;
+  signal?: AbortSignal;
   onProgress?: ProgressCallback;
 }
 
@@ -326,8 +335,10 @@ export async function createChatSession(
 
     const session = await lm.create({
       initialPrompts: [{ role: "system", content: SYSTEM_PROMPT }],
+      ...NANO_IO_OPTIONS,
       temperature: 0.3,
       topK: 3,
+      signal: options.signal,
       monitor(m) {
         m.addEventListener("downloadprogress", (event) => {
           const e = event as ProgressEventLike;
@@ -360,6 +371,13 @@ export async function createChatSession(
         onProgress?.({ phase: "download", loaded: r.progress, text: r.text });
       },
     });
+    // CreateMLCEngine has no abort hook, so a cancel mid-load can't stop the
+    // fetch — the weights finish downloading into cache. Honour it after the
+    // fact by tearing the engine down instead of handing back a live session.
+    if (options.signal?.aborted) {
+      await engine.unload().catch(() => {});
+      throw new DOMException("Aborted", "AbortError");
+    }
     onProgress?.({ phase: "ready" });
 
     return {
