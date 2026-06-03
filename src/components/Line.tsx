@@ -71,17 +71,21 @@ export function Line({ line, theme, animate = true, streaming }: LineProps) {
 
     case "ascii":
       return wrap(
-        <pre
-          style={{
-            color: line.accent ? theme.accent : theme.fg,
-            margin: 0,
-            fontFamily: "inherit",
-            fontSize: "11px",
-            lineHeight: 1.1,
-          }}
-        >
-          {line.text}
-        </pre>,
+        <>
+          <pre
+            aria-hidden="true"
+            style={{
+              color: line.accent ? theme.accent : theme.fg,
+              margin: 0,
+              fontFamily: "inherit",
+              fontSize: "11px",
+              lineHeight: 1.1,
+            }}
+          >
+            {line.text}
+          </pre>
+          {line.alt && <span className="sr-only">{line.alt}</span>}
+        </>,
       );
 
     case "segments":

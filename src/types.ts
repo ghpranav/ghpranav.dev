@@ -10,7 +10,7 @@ export type TerminalLine =
   | { type: "boot"; text: string }
   | { type: "text"; text: string }
   | { type: "error"; text: string }
-  | { type: "ascii"; text: string; accent?: boolean }
+  | { type: "ascii"; text: string; accent?: boolean; alt?: string }
   | { type: "segments"; parts: WhoamiSegment[] }
   | { type: "input"; text: string; prompt: string; chatMode?: boolean }
   | { type: "chat-assistant"; text: string }

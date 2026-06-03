@@ -322,7 +322,7 @@ export default function Terminal() {
       { d: 400, l: { type: "boot", text: "[ ok ] checking for on-device LLM..." } },
       { d: 560, l: { type: "boot", text: "[ ok ] warming espresso machine" } },
       { d: 720, l: { type: "boot", text: "[ ok ] system ready" } },
-      { d: 880, l: { type: "ascii", text: ASCII_NAME, accent: true } },
+      { d: 880, l: { type: "ascii", text: ASCII_NAME, accent: true, alt: "Pranav" } }, // alt mirrors the banner text
       {
         d: 1020,
         l: {
@@ -646,6 +646,7 @@ export default function Terminal() {
         .ptl-cursor { display: inline-block; width: 8px; height: 1em; background: ${theme.cursor}; vertical-align: text-bottom; animation: blink 1s steps(1) infinite; margin-left: 2px }
         .ptl-link { color: ${theme.accent}; text-decoration: none; border-bottom: 1px dotted ${theme.accent} }
         .ptl-link:hover { background: ${theme.accent}22 }
+        .ptl-link:focus-visible { outline: 2px solid ${theme.accent}; outline-offset: 2px; border-radius: 2px }
         .ptl-grain { position: fixed; inset: 0; pointer-events: none; z-index: 1; opacity: ${theme.grain};
           background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>") }
         .ptl-window { width: min(1024px, 100vw - 48px); height: min(calc(100vh - 48px), 800px); height: min(calc(100dvh - 48px), 800px); display: flex; flex-direction: column; border: 1px solid ${theme.dim}44; border-radius: 8px; background: ${theme.panel}; box-shadow: 0 24px 48px ${theme.bg}, 0 0 0 1px ${theme.dim}22 inset; overflow: hidden }
