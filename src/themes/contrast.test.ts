@@ -1,5 +1,7 @@
+/// <reference types="node" />
+
 import { describe, it, expect } from "vitest";
-import { readFileSync } from "fs";
+import { readFileSync } from "node:fs";
 import { contrastRatio } from "./contrast";
 import { THEMES } from "./index";
 
@@ -19,13 +21,12 @@ function parseStaticShellThemes(): Record<string, ShellTheme> {
     if (html[end] === "{") depth++;
     else if (html[end] === "}") { if (--depth === 0) { end++; break; } }
   }
-  // eslint-disable-next-line no-new-func
   return new Function(`return ${html.slice(start, end)}`)();
 }
 
 function hexToRgbString(hex: string): string {
   const h = hex.replace("#", "");
-  return `${parseInt(h.slice(0, 2), 16)}, ${parseInt(h.slice(2, 4), 16)}, ${parseInt(h.slice(4, 6), 16)}`;
+  return `${Number.parseInt(h.slice(0, 2), 16)}, ${Number.parseInt(h.slice(2, 4), 16)}, ${Number.parseInt(h.slice(4, 6), 16)}`;
 }
 
 // ─── 1. Utility unit tests ────────────────────────────────────────────────────
@@ -73,9 +74,9 @@ const TEXT_TABLE: TextEntry[] = [
 
 // Non-text UI affordances — 3:1 floor
 const UI_TABLE: TextEntry[] = [
-  { fgRole: "cursor", bgRole: "panel", threshold: 3.0, label: "cursor/panel (block cursor)" },
-  { fgRole: "accent", bgRole: "panel", threshold: 3.0, label: "accent/panel (streaming cursor)" },
-  { fgRole: "dim", bgRole: "bg", threshold: 3.0, label: "dim/bg (scrollbar thumb)" },
+  { fgRole: "cursor", bgRole: "panel", threshold: 3, label: "cursor/panel (block cursor)" },
+  { fgRole: "accent", bgRole: "panel", threshold: 3, label: "accent/panel (streaming cursor)" },
+  { fgRole: "dim", bgRole: "bg", threshold: 3, label: "dim/bg (scrollbar thumb)" },
 ];
 
 describe("theme contrast guardrail — text roles (AA 4.5:1)", () => {
