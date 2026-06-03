@@ -78,9 +78,14 @@ function wrapUserMessage(msg: string): string {
   return `<user_question>\n${msg}\n</user_question>`;
 }
 
+// ─── Chat message type ────────────────────────────────────────────────────
+
+export type ChatMessage = { role: "system" | "user" | "assistant"; content: string };
+
 // ─── Constants ────────────────────────────────────────────────────────────
 
 export const MIN_GB = 4;
+export const MAX_TURNS = 6;
 
 const STANDARD_MODEL = "Phi-3.5-mini-instruct-q4f16_1-MLC";
 const LIGHTER_MODEL = "Llama-3.2-1B-Instruct-q4f16_1-MLC";
@@ -312,6 +317,75 @@ export function saveEnginePreference(engine: "nano" | "webllm"): void {
   } catch { /* best-effort */ }
 }
 
+// ─── History helpers ─────────────────────────────────────────────────────
+
+/**
+ * Appends a completed turn to history and evicts the oldest user+assistant pair
+ * when the non-system message count exceeds 2 * maxTurns. System at index 0 is
+ * never evicted; eviction always removes a user+assistant pair to keep alternation.
+ */
+export function commitTurn(
+  history: ChatMessage[],
+  wrapped: string,
+  reply: string,
+  maxTurns: number,
+): void {
+  history.push({ role: "user", content: wrapped });
+  history.push({ role: "assistant", content: reply });
+  while (history.length - 1 > 2 * maxTurns) {
+    history.splice(1, 2);
+  }
+}
+
+// ─── WebLLM session factory (exported for unit testing with fake engines) ─
+
+export interface WebLLMEngineShim {
+  chat: {
+    completions: {
+      create(args: {
+        messages: ChatMessage[];
+        stream: true;
+        temperature: number;
+      }): Promise<AsyncIterable<{ choices?: Array<{ delta?: { content?: string } }> }>>;
+    };
+  };
+  interruptGenerate(): Promise<void>;
+  unload(): Promise<void>;
+}
+
+export function createWebLLMSession(engine: WebLLMEngineShim, modelId: string): ChatSession {
+  const history: ChatMessage[] = [{ role: "system", content: SYSTEM_PROMPT }];
+  return {
+    backend: `WebLLM · ${modelId} · on-device`,
+    async *stream(userMessage, signal) {
+      const wrapped = wrapUserMessage(userMessage);
+      const chunks = await engine.chat.completions.create({
+        messages: [...history, { role: "user", content: wrapped }],
+        stream: true,
+        temperature: 0.3,
+      });
+      let reply = "";
+      for await (const chunk of chunks) {
+        if (signal?.aborted) {
+          await engine.interruptGenerate();
+          throw new DOMException("Aborted", "AbortError");
+        }
+        const delta = chunk.choices?.[0]?.delta?.content;
+        if (delta) {
+          reply += delta;
+          yield delta;
+        }
+      }
+      commitTurn(history, wrapped, reply, MAX_TURNS);
+    },
+    destroy: async () => {
+      try {
+        await engine.unload();
+      } catch { /* best-effort */ }
+    },
+  };
+}
+
 // ─── Session factory ─────────────────────────────────────────────────────
 
 export interface CreateSessionOptions {
@@ -380,33 +454,7 @@ export async function createChatSession(
     }
     onProgress?.({ phase: "ready" });
 
-    return {
-      backend: `WebLLM · ${modelId} · on-device`,
-      async *stream(userMessage, signal) {
-        const chunks = await engine.chat.completions.create({
-          messages: [
-            { role: "system", content: SYSTEM_PROMPT },
-            { role: "user", content: wrapUserMessage(userMessage) },
-          ],
-          stream: true,
-          temperature: 0.3,
-        });
-
-        for await (const chunk of chunks) {
-          if (signal?.aborted) {
-            await engine.interruptGenerate();
-            throw new DOMException("Aborted", "AbortError");
-          }
-          const delta = chunk.choices?.[0]?.delta?.content;
-          if (delta) yield delta;
-        }
-      },
-      destroy: async () => {
-        try {
-          await engine.unload();
-        } catch { /* best-effort */ }
-      },
-    };
+    return createWebLLMSession(engine as unknown as WebLLMEngineShim, modelId);
   }
 
   // ─── Path 3: Nothing ─────────────────────────────────────────────────

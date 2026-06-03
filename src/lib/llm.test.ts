@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { detectCapability, pickWebLLMModel, detectDeviceClass, resolveEngine, type Capability, type ModelSelection } from "./llm";
+import { detectCapability, pickWebLLMModel, detectDeviceClass, resolveEngine, createWebLLMSession, commitTurn, MAX_TURNS, type Capability, type ModelSelection, type ChatMessage, type WebLLMEngineShim } from "./llm";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
 
@@ -325,5 +325,185 @@ describe("resolveEngine", () => {
       },
     );
     expect(r.action).toBe("consent-choice");
+  });
+});
+
+// ─── WebLLM conversation memory ──────────────────────────────────────────
+//
+// 1.1  Fake engine whose create() records messages and returns canned deltas.
+// 1.2–1.7  Memory policy tests — no model download required.
+
+describe("WebLLM conversation memory", () => {
+  // 1.1 Fake engine builder: records messages passed to create(), returns canned deltas per call
+  function makeEngine(deltasQueue: string[][]): {
+    engine: WebLLMEngineShim;
+    recordedMessages: ChatMessage[][];
+  } {
+    const recordedMessages: ChatMessage[][] = [];
+    let callIndex = 0;
+    const engine: WebLLMEngineShim = {
+      chat: {
+        completions: {
+          create: vi.fn().mockImplementation(async (args: { messages: ChatMessage[] }) => {
+            recordedMessages.push([...args.messages]);
+            const deltas = deltasQueue[callIndex++] ?? [];
+            return (async function* () {
+              for (const d of deltas) {
+                yield { choices: [{ delta: { content: d } }] };
+              }
+            })();
+          }),
+        },
+      },
+      interruptGenerate: vi.fn().mockResolvedValue(undefined),
+      unload: vi.fn().mockResolvedValue(undefined),
+    };
+    return { engine, recordedMessages };
+  }
+
+  async function drain(iter: AsyncIterable<string>): Promise<string> {
+    let out = "";
+    for await (const c of iter) out += c;
+    return out;
+  }
+
+  // 1.2  After a completed turn, the next stream() sends prior user+assistant in messages
+  it("sends prior turn's user and assistant in subsequent call", async () => {
+    const { engine, recordedMessages } = makeEngine([["hello"], ["world"]]);
+    const session = createWebLLMSession(engine, "test-model");
+
+    await drain(session.stream("first question"));
+    await drain(session.stream("second question"));
+
+    const second = recordedMessages[1];
+    expect(second[0].role).toBe("system");
+    expect(second[1].role).toBe("user");
+    expect(second[1].content).toContain("<user_question>");
+    expect(second[2].role).toBe("assistant");
+    expect(second[2].content).toBe("hello");
+    expect(second[3].role).toBe("user");
+    expect(second[3].content).toContain("<user_question>");
+  });
+
+  // 1.3  Aborted mid-stream: neither user nor partial assistant is committed
+  it("aborted turn leaves history unchanged", async () => {
+    const { engine, recordedMessages } = makeEngine([["done"], ["will-be-aborted"], ["ok"]]);
+    const session = createWebLLMSession(engine, "test-model");
+
+    await drain(session.stream("q1"));
+
+    const ctrl = new AbortController();
+    ctrl.abort();
+    await expect(drain(session.stream("q2-abort", ctrl.signal))).rejects.toThrow();
+
+    // Third turn — messages must not contain q2 content
+    await drain(session.stream("q3"));
+
+    const third = recordedMessages[2];
+    // system + (q1-user, q1-assistant) + q3-user = 4
+    expect(third).toHaveLength(4);
+    expect(third[0].role).toBe("system");
+    expect(third[1].role).toBe("user");
+    expect(third[2].role).toBe("assistant");
+    expect(third[3].role).toBe("user");
+    expect(third[3].content).not.toContain("q2-abort");
+  });
+
+  // 1.4  Non-abort error: history left unchanged
+  it("errored turn leaves history unchanged", async () => {
+    const callArgs: ChatMessage[][] = [];
+    let callCount = 0;
+    // Inline engine: call 2 returns an iterable that throws on first next()
+    const engine: WebLLMEngineShim = {
+      chat: {
+        completions: {
+          create: vi.fn().mockImplementation(async (args: { messages: ChatMessage[] }) => {
+            callArgs.push([...args.messages]);
+            const n = ++callCount;
+            if (n === 2) {
+              const err = new Error("engine exploded");
+              return {
+                [Symbol.asyncIterator]: () => ({
+                  next: async () => { throw err; },
+                  return: async () => ({ value: undefined, done: true as const }),
+                }),
+              };
+            }
+            const content = n === 1 ? "first-ok" : "third-ok";
+            return (async function* () { yield { choices: [{ delta: { content } }] }; })();
+          }),
+        },
+      },
+      interruptGenerate: vi.fn().mockResolvedValue(undefined),
+      unload: vi.fn().mockResolvedValue(undefined),
+    };
+    const session = createWebLLMSession(engine, "test-model");
+
+    await drain(session.stream("q1"));
+    await expect(drain(session.stream("q2-error"))).rejects.toThrow("engine exploded");
+    await drain(session.stream("q3"));
+
+    const third = callArgs[2];
+    expect(third).toHaveLength(4); // system + q1-user + q1-assistant + q3-user
+    expect(third[2].role).toBe("assistant");
+    expect(third[2].content).toBe("first-ok");
+    expect(third[3].content).not.toContain("q2-error");
+  });
+
+  // 1.5  Committed history is always strict system, user, assistant, user, assistant, …
+  it("committed history is strict alternating sequence", () => {
+    const history: ChatMessage[] = [{ role: "system", content: "sys" }];
+    for (let i = 0; i < 4; i++) {
+      commitTurn(history, `user-${i}`, `assistant-${i}`, MAX_TURNS);
+    }
+    expect(history[0].role).toBe("system");
+    for (let i = 1; i < history.length; i++) {
+      const expected = i % 2 === 1 ? "user" : "assistant";
+      expect(history[i].role).toBe(expected);
+    }
+    // No trailing unanswered user
+    expect(history[history.length - 1].role).toBe("assistant");
+  });
+
+  // 1.6  Eviction: oldest pair removed, system survives, alternation preserved
+  it("evicts oldest user+assistant pair when MAX_TURNS is exceeded", () => {
+    const history: ChatMessage[] = [{ role: "system", content: "sys" }];
+
+    for (let i = 0; i < MAX_TURNS; i++) {
+      commitTurn(history, `user-${i}`, `assistant-${i}`, MAX_TURNS);
+    }
+    expect(history).toHaveLength(1 + 2 * MAX_TURNS);
+
+    // One more — evicts oldest pair
+    commitTurn(history, "user-extra", "assistant-extra", MAX_TURNS);
+
+    expect(history).toHaveLength(1 + 2 * MAX_TURNS);
+    expect(history[0].role).toBe("system");
+    // Pair 0 (user-0, assistant-0) should be gone
+    expect(history[1].content).toBe("user-1");
+    expect(history[2].content).toBe("assistant-1");
+    // Latest pair present
+    expect(history[history.length - 2].content).toBe("user-extra");
+    expect(history[history.length - 1].content).toBe("assistant-extra");
+    // Alternation still holds after eviction
+    for (let i = 1; i < history.length; i++) {
+      expect(history[i].role).toBe(i % 2 === 1 ? "user" : "assistant");
+    }
+  });
+
+  // 1.7  Committed user content carries <user_question> tags
+  it("user message in history is wrapped with user_question tags", async () => {
+    const { engine, recordedMessages } = makeEngine([["reply-a"], ["reply-b"]]);
+    const session = createWebLLMSession(engine, "test-model");
+
+    await drain(session.stream("my raw question"));
+    await drain(session.stream("follow up"));
+
+    // In the second call, the first committed user message should be wrapped
+    const secondMsgs = recordedMessages[1];
+    const firstUserMsg = secondMsgs.find((m) => m.role === "user");
+    expect(firstUserMsg?.content).toMatch(/^<user_question>/);
+    expect(firstUserMsg?.content).toContain("my raw question");
+    expect(firstUserMsg?.content).toMatch(/<\/user_question>$/);
   });
 });
