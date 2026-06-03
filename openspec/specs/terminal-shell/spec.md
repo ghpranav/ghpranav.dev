@@ -320,20 +320,15 @@ For the streamed `chat-assistant` line, the terminal SHALL NOT cause a per-chara
 - **WHEN** the prompt line is appended
 - **THEN** it is announced via the live region
 
-### Requirement: Input does not trigger mobile zoom
+### Requirement: Input matches terminal text size
 
-The terminal input (`input.ptl-input`) SHALL render with a computed `font-size` of at least 16px so that focusing it on iOS Safari does not zoom the viewport or shift the layout. This font-size SHALL be decoupled from the 14px root/output font-size, which remains unchanged for output density.
+The terminal input (`input.ptl-input`) SHALL inherit the terminal's root font metrics so the live prompt row matches rendered output text. The terminal root and input SHALL both render at the same computed `font-size` of 14px unless a future spec change explicitly says otherwise.
 
-#### Scenario: Focusing the input on iOS does not zoom
-- **GIVEN** the site is open in mobile Safari
-- **WHEN** the user taps the terminal input to focus it
-- **THEN** the viewport does not zoom in and the layout does not shift
-- **AND** the input's computed font-size is at least 16px
-
-#### Scenario: Output text density is preserved
+#### Scenario: Prompt row matches output text size
 - **GIVEN** any viewport
-- **WHEN** the terminal renders output lines
-- **THEN** output text continues to use the 14px root font-size, unaffected by the input's font-size
+- **WHEN** the terminal renders output lines and the active input prompt
+- **THEN** the input text uses the same computed font-size as terminal output
+- **AND** both render at 14px
 
 ### Requirement: Input avoids mobile auto-mangling
 

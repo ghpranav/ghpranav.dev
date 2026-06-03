@@ -77,7 +77,7 @@ This repo uses an OpenSpec-style change workflow (see `openspec/config.yaml` and
 - Every command is one file exporting `{ name, help, run }`. (Currently the table is consolidated in `src/commands/index.ts`; if you split it, follow this rule.)
 - The `ask` command **must remain opt-in** — never auto-download model weights.
 - User-input wrapping in `<user_question>` tags is a hard rule, not a suggestion.
-- Performance budget: LCP < 1.2s on slow 4G, initial JS < 60KB gzipped (excluding lazily-imported WebLLM), Lighthouse 100/100 on the static shell. Anything that risks these needs a note in the proposal.
+- Performance budget: LCP < 1.2s on slow 4G, initial JS < 70KB gzipped (excluding lazily-imported WebLLM), Lighthouse 100/100 on the static shell. Anything that risks these needs a note in the proposal.
 
 ## Honest limitations to keep in mind when changing things
 

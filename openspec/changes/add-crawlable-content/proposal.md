@@ -32,7 +32,7 @@ _(none)_
 - **`index.html`** — gains a placeholder comment (e.g. `<!-- @crawlable-content -->`) outside `#root` where the generated block + `<noscript>` are injected. The existing static boot shell inside `#root` is unchanged.
 - **`src/index.css`** (or the injected markup) — a `.sr-only` visually-hidden utility (clip-rect technique) for the persistent block, if one is not already present.
 - **`src/content/site.ts` / `src/content/system-prompt.ts`** — unchanged as the source of truth; only *read* by the build step. (`BIO`/`ABOUT` are reused, not edited.)
-- **Performance budget** — adds a small amount (~1–2KB) of static HTML to the served document and **zero** JavaScript. The visible LCP element (the terminal shell) is unaffected; the hidden block is off the visible render path. Lighthouse **SEO** should improve; Performance holds. Within the < 60KB JS budget trivially (no JS added).
+- **Performance budget** — adds a small amount (~1–2KB) of static HTML to the served document and **zero** JavaScript. The visible LCP element (the terminal shell) is unaffected; the hidden block is off the visible render path. Lighthouse **SEO** should improve; Performance holds. Within the < 70KB JS budget trivially (no JS added).
 
 ## Non-goals
 

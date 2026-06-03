@@ -656,7 +656,7 @@ export default function Terminal() {
         .ptl-body::-webkit-scrollbar { width: 6px }
         .ptl-body::-webkit-scrollbar-track { background: ${theme.panel} }
         .ptl-body::-webkit-scrollbar-thumb { background: ${theme.dim}; border-radius: 3px }
-        input.ptl-input { background: transparent; border: none; outline: none; color: ${theme.fg}; font-family: inherit; font-size: 16px; flex: 1; caret-color: ${theme.cursor} }
+        input.ptl-input { background: transparent; border: none; outline: none; color: ${theme.fg}; font-family: inherit; font-size: inherit; line-height: inherit; flex: 1; caret-color: ${theme.cursor} }
         .ptl-prompt-row { display: flex; align-items: baseline; gap: 8px }
         .ptl-tag { display: inline-block; padding: 2px 8px; margin-right: 6px; border: 1px solid ${theme.dim}66; border-radius: 3px; font-size: 11px; color: ${theme.dim} }
         .ptl-chat-prompt { color: ${theme.accent2}; font-weight: 600 }
