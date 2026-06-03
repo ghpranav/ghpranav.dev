@@ -10,12 +10,20 @@ import type { TerminalLine } from "../types";
 type LineProps = {
   line: TerminalLine;
   theme: Theme;
+  animate?: boolean;
   streaming?: boolean;
 };
 
-export function Line({ line, theme, streaming }: LineProps) {
+export function Line({ line, theme, animate = true, streaming }: LineProps) {
   const wrap = (kids: ReactNode) => (
-    <div className="ptl-line" style={{ whiteSpace: "pre-wrap", marginBottom: 4 }}>
+    <div
+      className="ptl-line"
+      style={{
+        animation: animate ? undefined : "none",
+        whiteSpace: "pre-wrap",
+        marginBottom: 4,
+      }}
+    >
       {kids}
     </div>
   );

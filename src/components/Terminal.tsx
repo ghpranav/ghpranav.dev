@@ -31,6 +31,8 @@ import { Line } from "./Line";
 
 type LLMModule = typeof import("../lib/llm");
 
+const INITIAL_BOOT_LINE = "[ ok ] mounting /dev/curiosity";
+
 let llmModulePromise: Promise<LLMModule> | null = null;
 
 function loadLLMModule(): Promise<LLMModule> {
@@ -64,7 +66,9 @@ export default function Terminal() {
     );
     if (key) saveTheme(key);
   }, []);
-  const [lines, setLines] = useState<TerminalLine[]>([]);
+  const [lines, setLines] = useState<TerminalLine[]>([
+    { type: "boot", text: INITIAL_BOOT_LINE },
+  ]);
   const [history, setHistory] = useState<string[]>([]);
   const [histIdx, setHistIdx] = useState(-1);
   const [input, setInput] = useState("");
@@ -314,7 +318,6 @@ export default function Terminal() {
   useEffect(() => {
     if (booted) return;
     const seq: Array<{ d: number; l: TerminalLine }> = [
-      { d: 100, l: { type: "boot", text: "[ ok ] mounting /dev/curiosity" } },
       { d: 260, l: { type: "boot", text: "[ ok ] starting kafka-listener.service" } },
       { d: 400, l: { type: "boot", text: "[ ok ] checking for on-device LLM..." } },
       { d: 560, l: { type: "boot", text: "[ ok ] warming espresso machine" } },
@@ -682,6 +685,7 @@ export default function Terminal() {
               key={i}
               line={l}
               theme={theme}
+              animate={!(i === 0 && l.type === "boot" && l.text === INITIAL_BOOT_LINE)}
               streaming={
                 chatStreaming && l.type === "chat-assistant" && i === lines.length - 1
               }
