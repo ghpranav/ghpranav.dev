@@ -14,11 +14,13 @@ Bun is the package manager (`bun.lock` is committed).
 bun install
 bun run dev       # vite dev server, http://localhost:5173
 bun run build     # tsc -b && vite build → dist/
-bun run preview   # serve dist/ locally
+bun run preview   # bun run build, then `wrangler dev` (serves the build locally)
 bun run lint      # eslint .
+bun run test      # vitest run
+bun run deploy    # bun run build, then `wrangler deploy` (Cloudflare)
 ```
 
-There are no tests in this repo yet.
+Tests run with `bun run test` (Vitest); coverage is light (e.g. `src/themes/contrast.test.ts` asserts WCAG contrast across themes). Side-effectful LLM/network tests are gated behind `E2E=1` (see `openspec/config.yaml`).
 
 ## Architecture
 
@@ -29,15 +31,15 @@ There are no tests in this repo yet.
 - **`src/components/Terminal.tsx`** owns all session state (lines, history, theme, chat mode, streaming session). It runs the boot sequence, dispatches commands, and switches between shell mode (`pranav@dev:~$`) and chat mode (`pranav-chat>`).
 - **`src/commands/index.ts`** is a pure factory: `buildCommands(ctx)` returns a `CommandTable` (`Record<string, { help, run }>`). Commands that need to mutate terminal state (`clear`, `theme`, `ask`) receive callbacks via `ctx`; everything else is a pure `args → TerminalLine` function.
 - **`src/components/Line.tsx`** is a single switch on `TerminalLine.type`. To add a new kind of output, add a variant to the discriminated union in `src/types.ts` and a case in `Line.tsx`.
-- **`src/themes.ts`** holds theme objects (espresso/gruvbox/nord/tokyo/paper). Themes are interpolated into a runtime `<style>` block inside `Terminal.tsx` — that's intentional so theme switches are live, no reload.
+- **`src/themes/`** holds one theme object per file (espresso/gruvbox/nord/tokyo/paper), assembled in `src/themes/index.ts`. Themes are interpolated into a runtime `<style>` block inside `Terminal.tsx` — that's intentional so theme switches are live, no reload.
 
 ### The LLM cascade (`src/lib/llm.ts`)
 
-`detectBackend()` picks the best available on-device runtime, in order:
+`detectCapability()` returns a `Capability` whose `llmTier` is the best available on-device runtime, in order (`resolveEngine()` then maps capability + flags to a start/consent action):
 
 1. **`prompt-api`** — Chrome 138+ with `chrome://flags/#prompt-api-for-gemini-nano`. Uses `window.LanguageModel` (Gemini Nano). Ambient type stubs for this API live at the top of `llm.ts` since `@types/dom-chromium-ai` isn't pulled in.
 2. **`prompt-api-download`** — same, but the ~4GB model isn't on disk yet. First message triggers download; progress is reported via `monitor()`.
-3. **`webllm`** — any WebGPU browser. `@mlc-ai/web-llm` is **dynamically imported** to keep its bundle (and Phi-3.5 mini model ~800MB-2GB) out of the initial page load. Gated behind `ask --webllm` so users don't get a surprise download.
+3. **`webgpu`** — any WebGPU browser (engine kind is still `webllm`). `@mlc-ai/web-llm` is **dynamically imported** to keep its bundle out of the initial page load. The model is picked by device class / RAM: `Phi-3.5-mini-instruct-q4f16_1-MLC` on desktop (≥8GB), `Llama-3.2-1B-Instruct-q4f16_1-MLC` on lighter/mobile devices. Gated behind `ask --webllm` plus an in-terminal consent step, so users don't get a surprise download.
 4. **`none`** — throw a descriptive error.
 
 `createChatSession(backend, opts)` returns a uniform `ChatSession` shape — `{ backend, stream(msg, signal), destroy() }` — regardless of which path was taken. Callers (i.e. `Terminal.sendChat`) consume the async iterable and don't care which engine produced it.
@@ -74,7 +76,7 @@ The build runs `babel-plugin-react-compiler` via `@rolldown/plugin-babel` in `vi
 
 This repo uses an OpenSpec-style change workflow (see `openspec/config.yaml` and the `.claude/commands/opsx/*` + `.claude/skills/openspec-*` files). Project-specific OpenSpec rules from `openspec/config.yaml` worth knowing:
 
-- Every command is one file exporting `{ name, help, run }`. (Currently the table is consolidated in `src/commands/index.ts`; if you split it, follow this rule.)
+- Every command is one file under `src/commands/` exporting a `Command` (`{ name, help, run }`); `buildCommands(ctx)` in `index.ts` assembles them into the `CommandTable`.
 - The `ask` command **must remain opt-in** — never auto-download model weights.
 - User-input wrapping in `<user_question>` tags is a hard rule, not a suggestion.
 - Performance budget: LCP < 1.2s on slow 4G, initial JS < 70KB gzipped (excluding lazily-imported WebLLM), Lighthouse 100/100 on the static shell. Anything that risks these needs a note in the proposal.
