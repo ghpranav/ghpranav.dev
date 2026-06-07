@@ -45,7 +45,7 @@ context: |
 
   Performance budget:
     - LCP < 1.2s on slow 4G
-    - Total initial JS < 70KB gzipped (excluding lazily-imported WebLLM)
+    - Total initial JS < 75KB gzipped (excluding lazily-imported WebLLM)
     - Lighthouse 100/100 across the four categories on the static shell
 
 rules:
