@@ -142,7 +142,13 @@ export function Line({ line, theme, animate = true, streaming }: LineProps) {
               }}
             >
               <div>
-                <span style={{ color: theme.accent, fontWeight: 600 }}>{p.name}</span>
+                {p.href ? (
+                  <a className="ptl-link" href={p.href} target="_blank" rel="noreferrer">
+                    {p.name}
+                  </a>
+                ) : (
+                  <span style={{ color: theme.accent, fontWeight: 600 }}>{p.name}</span>
+                )}
                 <span style={{ color: theme.dim, marginLeft: 12, fontSize: 11 }}>{p.status}</span>
               </div>
               <div style={{ marginTop: 2 }}>{p.blurb}</div>

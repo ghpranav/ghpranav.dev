@@ -53,36 +53,32 @@ export type Project = {
   blurb: string;
   stack: readonly string[];
   status: string;
+  href?: string;
 };
 
 export const PROJECTS: readonly Project[] = [
   {
-    name: "ai-sre-agent",
+    name: "ask-cody-agent",
     blurb:
-      "Production LangGraph ReAct agent with multi-turn conversation, per-user OAuth 2.0 + PKCE, and MCP-based tool orchestration powering automated L0 incident resolution for an internal support team.",
-    stack: ["Python", "LangGraph", "LangChain", "MCP", "Kubernetes"],
+      "Production LangGraph ReAct agent with multi-turn conversation, per-user OAuth 2.0 + PKCE, and MCP-based tool orchestration, powering a chatbot and automated L0 incident resolution for an internal Cisco product.",
+    stack: ["Python", "Go", "LangGraph", "LangChain", "MCP", "Kubernetes"],
     status: "internal · production",
   },
   {
-    name: "ai-sre-pipeline",
+    name: "vocabgenie",
     blurb:
-      "Kafka-based incident processing pipeline that consumes ITSM events in real time and applies LLM-based triage to filter unresolvable cases and post automated resolutions.",
-    stack: ["Python", "Kafka", "LLMs", "Kubernetes"],
-    status: "internal · production",
+      "AI-powered vocabulary flashcard app for GRE prep — generates meanings, usage, and mnemonics on the fly via Groq-hosted LLaMA 3, over a deck scraped from Magoosh.",
+    stack: ["Next.js", "TypeScript", "Groq", "LLaMA 3", "Tailwind"],
+    status: "open source · live demo",
+    href: "https://vocabgenie.vercel.app",
   },
   {
-    name: "release-platform",
+    name: "link_preview_generator",
     blurb:
-      "Native release-management platform replacing a third-party tool — 5 categories of automated compliance guardrails (Quality, SOX, Security, Change, Capability) across a microservice architecture. Led the 9-month effort as technical lead.",
-    stack: ["Go", "Java", "React", "MongoDB", "Kafka"],
-    status: "internal · shipped",
-  },
-  {
-    name: "bigquery-cicd",
-    blurb:
-      "Pre-packaged CI/CD pipeline for Google BigQuery enabling ~100 data applications to deploy DDL scripts with automated validation — ~70% productivity improvement.",
-    stack: ["Jenkins", "BigQuery", "Python"],
-    status: "internal · shipped",
+      "Cross-platform Flutter package that turns any URL into a rich preview card, with a robust parsing/scraping engine for broader link support, result caching, and full widget customization.",
+    stack: ["Dart", "Flutter"],
+    status: "open source · pub.dev",
+    href: "https://pub.dev/packages/link_preview_generator",
   },
 ];
 
