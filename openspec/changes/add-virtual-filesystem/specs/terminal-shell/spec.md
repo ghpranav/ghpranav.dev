@@ -4,7 +4,7 @@
 
 The terminal SHALL render one of two prompts at any time:
 
-- **Shell mode**: `pranav@dev:<cwd>$`, colored with `theme.prompt`, where `<cwd>` is the current working directory abbreviated so the home directory renders as `~` (e.g. `pranav@dev:~$` at home, `pranav@dev:~/projects$` inside `projects/`). The displayed path SHALL update live as the `cd` command changes the working directory.
+- **Shell mode**: `ghpranav@dev:<cwd>$`, colored with `theme.prompt`, where `<cwd>` is the current working directory abbreviated so the home directory renders as `~` (e.g. `ghpranav@dev:~$` at home, `ghpranav@dev:~/projects$` inside `projects/`). The displayed path SHALL update live as the `cd` command changes the working directory.
 - **Chat mode**: `pranav-chat>`, colored with `theme.accent2`
 
 The titlebar subtitle SHALL read `zsh` in shell mode and `ai (on-device)` in chat mode, both followed by the active theme name.
@@ -14,14 +14,14 @@ The terminal SHALL enter chat mode when a command invokes `ctx.enterChat(...)`. 
 #### Scenario: Default prompt after boot
 - **GIVEN** the terminal has finished booting and no chat session is active
 - **WHEN** the input prompt is rendered
-- **THEN** the prompt text is `pranav@dev:~$`
-- **AND** the titlebar reads `pranav@dev — zsh — <theme>`
+- **THEN** the prompt text is `ghpranav@dev:~$`
+- **AND** the titlebar reads `ghpranav@dev — zsh — <theme>`
 
 #### Scenario: Prompt reflects the working directory
 - **GIVEN** the terminal is in shell mode at the home directory
 - **WHEN** the user runs `cd projects`
-- **THEN** the prompt becomes `pranav@dev:~/projects$`
-- **AND** running `cd ~` (or `cd` with no argument) returns the prompt to `pranav@dev:~$`
+- **THEN** the prompt becomes `ghpranav@dev:~/projects$`
+- **AND** running `cd ~` (or `cd` with no argument) returns the prompt to `ghpranav@dev:~$`
 
 #### Scenario: Entering chat mode
 - **GIVEN** the terminal is in shell mode

@@ -16,6 +16,10 @@ Developer Experience) platform — an internal DevOps platform with
 100+ microservices serving hundreds of engineering teams.
 He has ~4 years of experience.
 
+This terminal's 'ask' pranav-chat runs an LLM entirely on the visitor's
+device — Chrome's Gemini Nano via the Prompt API, with a WebGPU
+fallback. No server, no API keys, nothing user types leaves the browser.
+
 FOCUS AREAS:
 - Production AI agents (LangGraph, LangChain, MCP) for internal
   incident resolution and developer support
@@ -42,7 +46,7 @@ general terms — no product names below):
   conversation, per-user OAuth 2.0 + PKCE authentication, and MCP-based
   tool orchestration powering a WebEx chatbot and an automated L0 incident
   resolution for an internal product.
-- Designed a Kafka-based AI SRE pipeline that consumes ServiceNow events in
+- Designed a Kafka-based AI SRE pipeline that consumes ServiceNow incidents in
   real time, applies LLM-based vagueness triage to filter unresolvable
   cases, and posts automated resolutions.
 - Part of a 9-month initiative as senior software engineer, replacing a

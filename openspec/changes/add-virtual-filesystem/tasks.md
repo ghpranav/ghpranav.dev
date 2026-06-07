@@ -14,7 +14,7 @@
 ## 3. Working directory and prompt
 
 - [ ] 3.1 In `src/components/Terminal.tsx`, add `const [cwd, setCwd] = useState("/home/pranav")` and pass `cwd` + `setCwd` into the command context
-- [ ] 3.2 Build the shell-mode prompt from `cwd` via an `abbrev(cwd)` that renders the home dir as `~` (`pranav@dev:${abbrev(cwd)}$`); leave the chat-mode prompt unchanged; do not reset `cwd` when leaving chat mode
+- [ ] 3.2 Build the shell-mode prompt from `cwd` via an `abbrev(cwd)` that renders the home dir as `~` (`ghpranav@dev:${abbrev(cwd)}$`); leave the chat-mode prompt unchanged; do not reset `cwd` when leaving chat mode
 
 ## 4. Filesystem commands
 

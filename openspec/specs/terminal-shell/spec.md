@@ -42,7 +42,7 @@ The interactive input prompt SHALL appear only after the boot sequence completes
 
 The terminal SHALL render one of two prompts at any time:
 
-- **Shell mode**: `pranav@dev:~$`, colored with `theme.prompt`
+- **Shell mode**: `ghpranav@dev:~$`, colored with `theme.prompt`
 - **Chat mode**: `pranav-chat>`, colored with `theme.accent2`
 
 The titlebar subtitle SHALL read `zsh` in shell mode and `ai (on-device)` in chat mode, both followed by the active theme name.
@@ -52,8 +52,8 @@ The terminal SHALL enter chat mode when a command invokes `ctx.enterChat(...)`. 
 #### Scenario: Default prompt after boot
 - **GIVEN** the terminal has finished booting and no chat session is active
 - **WHEN** the input prompt is rendered
-- **THEN** the prompt text is `pranav@dev:~$`
-- **AND** the titlebar reads `pranav@dev — zsh — <theme>`
+- **THEN** the prompt text is `ghpranav@dev:~$`
+- **AND** the titlebar reads `ghpranav@dev — zsh — <theme>`
 
 #### Scenario: Entering chat mode
 - **GIVEN** the terminal is in shell mode
@@ -64,7 +64,7 @@ The terminal SHALL enter chat mode when a command invokes `ctx.enterChat(...)`. 
 #### Scenario: Leaving chat mode
 - **GIVEN** the terminal is in chat mode
 - **WHEN** the user submits `/exit` or `exit`
-- **THEN** the prompt returns to `pranav@dev:~$`
+- **THEN** the prompt returns to `ghpranav@dev:~$`
 - **AND** a `→ exited chat. back to shell.` text line is appended
 
 ### Requirement: Input submission
@@ -80,7 +80,7 @@ Empty or whitespace-only input SHALL be echoed as an `input` line but produce no
 #### Scenario: Successful shell command
 - **GIVEN** the terminal is in shell mode
 - **WHEN** the user types `whoami` and presses Enter
-- **THEN** an `input` line with prompt `pranav@dev:~$` and text `whoami` is appended
+- **THEN** an `input` line with prompt `ghpranav@dev:~$` and text `whoami` is appended
 - **AND** `whoami` is appended to history
 - **AND** the registered `whoami` command runs and its returned line is appended
 

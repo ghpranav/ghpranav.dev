@@ -1,6 +1,6 @@
 ## Context
 
-`Terminal.tsx` owns session state and builds the prompt string (`pranav@dev:~$`, `Terminal.tsx:482/627`) and the `CommandContext` passed to every command. Commands are pure `(args, ctx) => TerminalLine | null`. The `complete?` hook (currently used only by `theme`) advertises completion candidates that a registry-driven helper prefix-filters. Rendering is a switch over the `TerminalLine` union in `Line.tsx`. Rich variants already exist for `skills`, `projects`, `contact` — they render `site.ts` content.
+`Terminal.tsx` owns session state and builds the prompt string (`ghpranav@dev:~$`, `Terminal.tsx:482/627`) and the `CommandContext` passed to every command. Commands are pure `(args, ctx) => TerminalLine | null`. The `complete?` hook (currently used only by `theme`) advertises completion candidates that a registry-driven helper prefix-filters. Rendering is a switch over the `TerminalLine` union in `Line.tsx`. Rich variants already exist for `skills`, `projects`, `contact` — they render `site.ts` content.
 
 The key insight: the portfolio content already lives as typed exports (`ABOUT`, `SKILLS`, `PROJECTS`, `CONTACTS`). A virtual filesystem doesn't need new content — it needs a **tree that points at that content**, plus path resolution and a working directory. `cat` then *reuses* the existing rich renderers instead of re-printing prose.
 
@@ -63,7 +63,7 @@ The root (`/home/pranav`) holds `about.txt` (`render → { type:"text", text: AB
 
 ### 4. `cwd` lives in `Terminal.tsx`; the prompt is derived from it
 
-Add `const [cwd, setCwd] = useState("/home/pranav")`. Pass `cwd` + `setCwd` into the command context. The shell prompt becomes `pranav@dev:${abbrev(cwd)}$` where `abbrev` replaces the home-dir prefix with `~` (`/home/pranav` → `~`, `/home/pranav/projects` → `~/projects`). Chat-mode prompt is unchanged.
+Add `const [cwd, setCwd] = useState("/home/pranav")`. Pass `cwd` + `setCwd` into the command context. The shell prompt becomes `ghpranav@dev:${abbrev(cwd)}$` where `abbrev` replaces the home-dir prefix with `~` (`/home/pranav` → `~`, `/home/pranav/projects` → `~/projects`). Chat-mode prompt is unchanged.
 
 **Why in `Terminal.tsx`, not a global store:** the project's convention is "no external state library, just hooks." `cwd` is session state exactly like `lines`/`history`/`theme`, and the prompt already renders there.
 

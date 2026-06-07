@@ -453,7 +453,7 @@ All other input in chat mode SHALL be sent to the model.
 - **GIVEN** the terminal is in chat mode with an active session
 - **WHEN** the user submits `/exit`
 - **THEN** the chat session is destroyed and `chatMode` is set to `false`
-- **AND** the prompt returns to `pranav@dev:~$`
+- **AND** the prompt returns to `ghpranav@dev:~$`
 
 #### Scenario: /clear resets the conversation
 - **GIVEN** the terminal is in chat mode with conversation history

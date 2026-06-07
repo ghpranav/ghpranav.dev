@@ -479,7 +479,7 @@ export default function Terminal() {
   const runCommand = useCallback(
     (raw: string) => {
       const trimmed = raw.trim();
-      const promptStr = chatMode ? "pranav-chat>" : "pranav@dev:~$";
+      const promptStr = chatMode ? "pranav-chat>" : "ghpranav@dev:~$";
       appendLine({ type: "input", text: raw, prompt: promptStr, chatMode });
       if (!trimmed) return;
 
@@ -614,7 +614,7 @@ export default function Terminal() {
           appendLine({
             type: "input",
             text: input + "^C",
-            prompt: chatMode ? "pranav-chat>" : "pranav@dev:~$",
+            prompt: chatMode ? "pranav-chat>" : "ghpranav@dev:~$",
             chatMode,
           });
           setInput("");
@@ -624,7 +624,7 @@ export default function Terminal() {
     [input, history, histIdx, chatMode, chatStreaming, cycle, runCommand, handleTab, appendLine],
   );
 
-  const promptStr = chatMode ? "pranav-chat>" : "pranav@dev:~$";
+  const promptStr = chatMode ? "pranav-chat>" : "ghpranav@dev:~$";
 
   return (
     <div
@@ -673,7 +673,7 @@ export default function Terminal() {
           <div className="ptl-dot" style={{ background: "#ffbd2e" }} />
           <div className="ptl-dot" style={{ background: "#27c93f" }} />
           <div className="ptl-title">
-            pranav@dev — {chatMode ? "ai (on-device)" : "zsh"} — {theme.name}
+            ghpranav@dev — {chatMode ? "ai (on-device)" : "zsh"} — {theme.name}
             {chatStreaming && (
               <span style={{ color: theme.accent, marginLeft: 8 }}>● streaming</span>
             )}

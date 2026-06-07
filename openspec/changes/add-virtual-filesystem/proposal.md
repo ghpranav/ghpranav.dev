@@ -1,6 +1,6 @@
 ## Why
 
-The prompt already advertises a filesystem — `pranav@dev:~$` names a user, a host, and a home directory — but there's nothing behind the `~`. Type `ls` and you get `command not found`. The terminal's most evocative promise is unredeemed.
+The prompt already advertises a filesystem — `ghpranav@dev:~$` names a user, a host, and a home directory — but there's nothing behind the `~`. Type `ls` and you get `command not found`. The terminal's most evocative promise is unredeemed.
 
 This change redeems it: a small **in-memory virtual filesystem** where the portfolio *is* a directory tree you walk. `ls` lists it, `cat about.txt` prints the bio, `cd projects && cat ai-sre-agent.md` opens a project, `tree` shows the whole thing. A portfolio you explore like a disk is memorable in a way a flat command list is not — and it makes a dozen classic commands earn their place at once, because now there is something for them to operate on.
 
@@ -24,7 +24,7 @@ This change redeems it: a small **in-memory virtual filesystem** where the portf
     └── bigquery-cicd.md      → one per PROJECTS entry
 ```
 
-**A working directory.** `CommandContext` gains `cwd: string` and `setCwd(path)`. The shell prompt reflects it: `pranav@dev:~$` → `pranav@dev:~/projects$`. The `cwd` lives in `Terminal.tsx` state next to the other session state.
+**A working directory.** `CommandContext` gains `cwd: string` and `setCwd(path)`. The shell prompt reflects it: `ghpranav@dev:~$` → `ghpranav@dev:~/projects$`. The `cwd` lives in `Terminal.tsx` state next to the other session state.
 
 **Filesystem commands** (each its own `src/commands/<name>.ts`):
 - `ls [-l] [-a] [path]` *(visible)* — lists a directory (or stats a file); `-a` reveals dotfiles, `-l` adds a long form; directories and files are visually distinguished.

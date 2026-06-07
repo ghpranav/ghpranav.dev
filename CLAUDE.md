@@ -28,7 +28,7 @@ Tests run with `bun run test` (Vitest); coverage is light (e.g. `src/themes/cont
 
 `src/App.tsx` mounts a single `<Terminal />`. Everything else is composed inside it:
 
-- **`src/components/Terminal.tsx`** owns all session state (lines, history, theme, chat mode, streaming session). It runs the boot sequence, dispatches commands, and switches between shell mode (`pranav@dev:~$`) and chat mode (`pranav-chat>`).
+- **`src/components/Terminal.tsx`** owns all session state (lines, history, theme, chat mode, streaming session). It runs the boot sequence, dispatches commands, and switches between shell mode (`ghpranav@dev:~$`) and chat mode (`pranav-chat>`).
 - **`src/commands/index.ts`** is a pure factory: `buildCommands(ctx)` returns a `CommandTable` (`Record<string, { help, run }>`). Commands that need to mutate terminal state (`clear`, `theme`, `ask`) receive callbacks via `ctx`; everything else is a pure `args → TerminalLine` function.
 - **`src/components/Line.tsx`** is a single switch on `TerminalLine.type`. To add a new kind of output, add a variant to the discriminated union in `src/types.ts` and a case in `Line.tsx`.
 - **`src/themes/`** holds one theme object per file (espresso/gruvbox/nord/tokyo/paper), assembled in `src/themes/index.ts`. Themes are interpolated into a runtime `<style>` block inside `Terminal.tsx` — that's intentional so theme switches are live, no reload.
