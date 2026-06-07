@@ -24,7 +24,7 @@ export const WHOAMI: WhoamiSegment[] = [
   { c: "fg", t: "Software Engineer at Cisco · AI agents, backend, DevX · Bangalore" },
 ];
 
-export const ABOUT = `Software engineer at Cisco's Engineering Productivity team,
+export const ABOUT = `Software Engineer at Cisco's Engineering Productivity team,
 on the CoDE (Cisco Developer Experience) platform — an internal
 DevOps platform with 100+ microservices serving hundreds of
 engineering teams.
@@ -39,12 +39,12 @@ Type \`help\` to see all commands.`;
 export type Skills = Record<string, readonly string[]>;
 
 export const SKILLS: Skills = {
-  languages: ["Python", "Go", "Java", "TypeScript", "Kotlin", "Bash"],
-  ai: ["LangGraph", "LangChain", "MCP", "LLMs", "RAG", "OAuth 2.0 + PKCE"],
-  backend: ["Spring Boot", "FastAPI", "Kafka", "gRPC", "Event-driven"],
-  frontend: ["React 18", "Remix", "Nx", "Vite", "TypeScript"],
+  languages: ["Python", "Go", "Java", "TypeScript", "Bash"],
+  ai: ["LangGraph", "LangChain", "MCP", "LLMs", "RAG", "Agentic workflows", "Spec-Driven development"],
+  backend: ["Spring Boot", "FastAPI", "Kafka", "event-driven architecture", "BFF/facade pattern"],
+  frontend: ["React", "Angular", "TypeScript", "Vite", "Nx"],
   infra: ["Kubernetes", "OpenShift", "Docker", "ArgoCD", "Jenkins"],
-  data: ["MongoDB", "Redis", "PostgreSQL", "BigQuery"],
+  data: ["MongoDB", "Redis"],
   observability: ["Splunk", "Prometheus", "Grafana"],
 };
 
