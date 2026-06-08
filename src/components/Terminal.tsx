@@ -627,7 +627,7 @@ export default function Terminal() {
   const promptStr = chatMode ? "pranav-chat>" : "ghpranav@dev:~$";
 
   return (
-    <div
+    <main
       className="ptl-root"
       style={{
         background: theme.bg,
@@ -755,6 +755,6 @@ export default function Terminal() {
           )}
         </div>
       </div>
-    </div>
+    </main>
   );
 }
