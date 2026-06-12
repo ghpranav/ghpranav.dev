@@ -82,6 +82,9 @@ export default function Terminal() {
   const [loadAbort, setLoadAbort] = useState<AbortController | null>(null);
   const [pendingConsent, setPendingConsent] = useState<PendingConsent | null>(null);
   const [chatLoading, setChatLoading] = useState(false);
+  const [ctrlCHint, setCtrlCHint] = useState(false);
+
+  const ctrlCTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const inputRef = useRef<HTMLInputElement | null>(null);
   const bodyRef = useRef<HTMLDivElement | null>(null);
@@ -291,6 +294,8 @@ export default function Terminal() {
   );
 
   const leaveChat = useCallback(() => {
+    if (ctrlCTimerRef.current) { clearTimeout(ctrlCTimerRef.current); ctrlCTimerRef.current = null; }
+    setCtrlCHint(false);
     streamAbortRef.current?.abort();
     void chatSession?.destroy();
     setChatSession(null);
@@ -375,12 +380,20 @@ export default function Terminal() {
     if (!loadAbort) return;
     const onKeyDown = (e: globalThis.KeyboardEvent) => {
       if (e.ctrlKey && (e.key === "c" || e.key === "C")) {
-        loadAbort.abort();
+        if (ctrlCTimerRef.current) {
+          clearTimeout(ctrlCTimerRef.current);
+          ctrlCTimerRef.current = null;
+          loadAbort.abort();
+          leaveChat();
+        } else {
+          setCtrlCHint(true);
+          ctrlCTimerRef.current = setTimeout(() => { ctrlCTimerRef.current = null; setCtrlCHint(false); }, 2000);
+        }
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [loadAbort]);
+  }, [loadAbort, leaveChat]);
 
   // ─── Chat-mode message sending ───────────────────────────────────────────
   const sendChat = useCallback(
@@ -609,19 +622,28 @@ export default function Terminal() {
         setLines([]);
       } else if (e.key === "c" && e.ctrlKey) {
         if (chatStreaming && streamAbortRef.current) {
+          if (ctrlCTimerRef.current) { clearTimeout(ctrlCTimerRef.current); ctrlCTimerRef.current = null; }
+          setCtrlCHint(false);
           streamAbortRef.current.abort();
+        } else if (chatMode) {
+          if (ctrlCTimerRef.current) {
+            clearTimeout(ctrlCTimerRef.current);
+            ctrlCTimerRef.current = null;
+            setCtrlCHint(false);
+            appendLine({ type: "input", text: "^C", prompt: "pranav-chat>", chatMode: true });
+            leaveChat();
+          } else {
+            setInput("");
+            setCtrlCHint(true);
+            ctrlCTimerRef.current = setTimeout(() => { ctrlCTimerRef.current = null; setCtrlCHint(false); }, 2000);
+          }
         } else {
-          appendLine({
-            type: "input",
-            text: input + "^C",
-            prompt: chatMode ? "pranav-chat>" : "ghpranav@dev:~$",
-            chatMode,
-          });
+          appendLine({ type: "input", text: input + "^C", prompt: "ghpranav@dev:~$", chatMode: false });
           setInput("");
         }
       }
     },
-    [input, history, histIdx, chatMode, chatStreaming, cycle, runCommand, handleTab, appendLine],
+    [input, history, histIdx, chatMode, chatStreaming, cycle, runCommand, handleTab, appendLine, leaveChat],
   );
 
   const promptStr = chatMode ? "pranav-chat>" : "ghpranav@dev:~$";
@@ -752,6 +774,12 @@ export default function Terminal() {
                 </div>
               )}
             </>
+          )}
+
+          {ctrlCHint && (
+            <div className="ptl-line" style={{ color: theme.dim, marginTop: 2 }}>
+              (ctrl-c again to exit)
+            </div>
           )}
         </div>
       </div>
